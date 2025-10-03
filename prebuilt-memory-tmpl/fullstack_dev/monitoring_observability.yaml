@@ -1,0 +1,52 @@
+name: "Monitoring & Observability"
+description: "Memory template for system monitoring and observability"
+sections:
+  metrics:
+    description: "Application and infrastructure metrics"
+    importance: 0.8
+    guidelines: |
+      - Business metrics and KPI tracking
+      - Application performance metrics (latency, throughput)
+      - Infrastructure metrics (CPU, memory, disk, network)
+      - Custom metrics and domain-specific measurements
+      - SLA/SLO definition and monitoring
+  
+  logging:
+    description: "Logging strategy and implementation"
+    importance: 0.8
+    guidelines: |
+      - Structured logging and log format standards
+      - Log aggregation and centralized management
+      - Log retention policies and storage optimization
+      - Security and audit logging requirements
+      - Log analysis and pattern recognition
+  
+  tracing:
+    description: "Distributed tracing and request flow"
+    importance: 0.7
+    guidelines: |
+      - Distributed tracing implementation and setup
+      - Request flow visualization and analysis
+      - Performance bottleneck identification
+      - Service dependency mapping
+      - Trace sampling and data volume management
+  
+  alerting:
+    description: "Alerting rules and incident response"
+    importance: 0.8
+    guidelines: |
+      - Alert rule definition and threshold setting
+      - Escalation procedures and on-call rotation
+      - Alert fatigue prevention and noise reduction
+      - Incident response automation and runbooks
+      - Post-incident analysis and improvement
+  
+  dashboards:
+    description: "Dashboard design and visualization"
+    importance: 0.6
+    guidelines: |
+      - Executive dashboard design and KPI visualization
+      - Operational dashboard for day-to-day monitoring
+      - Troubleshooting dashboard for incident response
+      - Team-specific dashboard customization
+      - Mobile-friendly dashboard design

@@ -1,0 +1,52 @@
+name: "Code Review Process"
+description: "Memory template for code review practices and quality assurance"
+sections:
+  review_standards:
+    description: "Code review guidelines and standards"
+    importance: 0.8
+    guidelines: |
+      - Code review checklist and criteria
+      - Coding standards and style guide enforcement
+      - Architecture compliance and design pattern usage
+      - Performance considerations and optimization
+      - Security review and vulnerability assessment
+  
+  review_process:
+    description: "Code review workflow and procedures"
+    importance: 0.8
+    guidelines: |
+      - Pull request creation and description standards
+      - Reviewer assignment and rotation strategies
+      - Review timeline and response expectations
+      - Conflict resolution and decision-making process
+      - Merge criteria and approval requirements
+  
+  quality_metrics:
+    description: "Code quality measurement and tracking"
+    importance: 0.7
+    guidelines: |
+      - Code coverage metrics and targets
+      - Cyclomatic complexity analysis
+      - Code duplication detection and reduction
+      - Technical debt identification and tracking
+      - Defect tracking and root cause analysis
+  
+  knowledge_sharing:
+    description: "Learning and knowledge transfer through reviews"
+    importance: 0.7
+    guidelines: |
+      - Constructive feedback and teaching moments
+      - Best practice sharing and documentation
+      - Junior developer mentoring through reviews
+      - Architecture decision communication
+      - Cross-team knowledge sharing
+  
+  automation:
+    description: "Automated code review and quality gates"
+    importance: 0.6
+    guidelines: |
+      - Static code analysis tool integration
+      - Automated testing and CI/CD integration
+      - Code formatting and linting automation
+      - Security scanning and vulnerability detection
+      - Performance testing and regression prevention

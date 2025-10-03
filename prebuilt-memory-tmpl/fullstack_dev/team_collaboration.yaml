@@ -1,0 +1,52 @@
+name: "Team Collaboration"
+description: "Memory template for team processes and collaboration"
+sections:
+  communication:
+    description: "Team communication and coordination"
+    importance: 0.8
+    guidelines: |
+      - Daily standup structure and effectiveness
+      - Sprint planning and backlog management
+      - Retrospective insights and action items
+      - Cross-team communication protocols
+      - Documentation and knowledge sharing practices
+  
+  code_collaboration:
+    description: "Code review and pair programming"
+    importance: 0.8
+    guidelines: |
+      - Code review guidelines and best practices
+      - Pair programming sessions and techniques
+      - Knowledge transfer and mentoring activities
+      - Coding standards and style guide adherence
+      - Git workflow and branching strategies
+  
+  project_management:
+    description: "Project coordination and delivery"
+    importance: 0.7
+    guidelines: |
+      - Sprint goal definition and tracking
+      - Task estimation and capacity planning
+      - Risk identification and mitigation strategies
+      - Stakeholder communication and updates
+      - Delivery timeline and milestone tracking
+  
+  team_development:
+    description: "Team growth and skill development"
+    importance: 0.7
+    guidelines: |
+      - Individual development plans and goals
+      - Team skill matrix and gap analysis
+      - Training opportunities and resource allocation
+      - Career progression and advancement paths
+      - Team building activities and culture development
+  
+  process_improvement:
+    description: "Process optimization and efficiency"
+    importance: 0.6
+    guidelines: |
+      - Process bottleneck identification and resolution
+      - Tool evaluation and adoption decisions
+      - Automation opportunities and implementation
+      - Workflow optimization and standardization
+      - Continuous improvement initiatives and metrics

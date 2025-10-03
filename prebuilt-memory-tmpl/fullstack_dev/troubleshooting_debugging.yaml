@@ -1,0 +1,52 @@
+name: "Troubleshooting & Debugging"
+description: "Memory template for systematic debugging and issue resolution"
+sections:
+  issue_analysis:
+    description: "Problem identification and analysis"
+    importance: 0.9
+    guidelines: |
+      - Error reproduction steps and conditions
+      - Log analysis and error pattern identification
+      - Stack trace analysis and root cause investigation
+      - System state and environment analysis
+      - User impact assessment and severity classification
+  
+  debugging_techniques:
+    description: "Debugging tools and methodologies"
+    importance: 0.8
+    guidelines: |
+      - Debugger usage and breakpoint strategies
+      - Performance profiling and bottleneck identification
+      - Memory leak detection and analysis
+      - Network traffic analysis and monitoring
+      - Database query analysis and optimization
+  
+  monitoring_tools:
+    description: "Monitoring and observability setup"
+    importance: 0.7
+    guidelines: |
+      - Application performance monitoring (APM) configuration
+      - Log aggregation and searching capabilities
+      - Distributed tracing and service dependency mapping
+      - Alerting rules and escalation procedures
+      - Custom metrics and dashboard creation
+  
+  resolution_tracking:
+    description: "Issue resolution and documentation"
+    importance: 0.7
+    guidelines: |
+      - Root cause analysis documentation
+      - Solution implementation and testing
+      - Prevention strategies and safeguards
+      - Knowledge base updates and sharing
+      - Post-mortem analysis and lessons learned
+  
+  automation:
+    description: "Automated debugging and self-healing systems"
+    importance: 0.6
+    guidelines: |
+      - Automated error detection and classification
+      - Self-healing mechanisms and circuit breakers
+      - Automated log analysis and pattern recognition
+      - Health check automation and recovery procedures
+      - Chaos engineering and resilience testing

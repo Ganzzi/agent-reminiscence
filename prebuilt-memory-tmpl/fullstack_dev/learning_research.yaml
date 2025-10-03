@@ -1,0 +1,52 @@
+name: "Learning & Research"
+description: "Memory template for continuous learning and technology research"
+sections:
+  technology_research:
+    description: "New technology evaluation and research"
+    importance: 0.7
+    guidelines: |
+      - Technology trend analysis and industry research
+      - Proof of concept development and evaluation
+      - Comparative analysis of tools and frameworks
+      - Adoption timeline and migration strategies
+      - Risk assessment and mitigation planning
+  
+  skill_development:
+    description: "Personal and team skill development"
+    importance: 0.8
+    guidelines: |
+      - Learning objectives and skill gap analysis
+      - Training programs and certification progress
+      - Hands-on project experience and practice
+      - Mentoring and knowledge transfer activities
+      - Conference attendance and community involvement
+  
+  best_practices:
+    description: "Industry best practices and patterns"
+    importance: 0.7
+    guidelines: |
+      - Design pattern research and implementation
+      - Industry standard adoption and compliance
+      - Best practice documentation and guidelines
+      - Team training and knowledge sharing sessions
+      - External consultation and expert advice
+  
+  innovation:
+    description: "Innovation projects and experimentation"
+    importance: 0.6
+    guidelines: |
+      - Innovation time allocation and project selection
+      - Experimental feature development and testing
+      - Internal tool development and optimization
+      - Process improvement and automation initiatives
+      - Open source contribution and community engagement
+  
+  knowledge_sharing:
+    description: "Knowledge documentation and sharing"
+    importance: 0.7
+    guidelines: |
+      - Technical blog posts and documentation
+      - Internal presentation and workshop delivery
+      - Code review insights and teaching moments
+      - Architecture decision documentation
+      - Lessons learned and retrospective insights

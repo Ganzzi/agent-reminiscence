@@ -1,0 +1,52 @@
+name: "Deployment Pipeline"
+description: "Memory template for CI/CD and deployment automation"
+sections:
+  pipeline_design:
+    description: "CI/CD pipeline architecture and stages"
+    importance: 0.8
+    guidelines: |
+      - Pipeline stage design (build, test, deploy)
+      - Branch strategy and GitFlow implementation
+      - Automated testing integration
+      - Quality gates and approval processes
+      - Pipeline as code and version control
+  
+  build_automation:
+    description: "Build and artifact management"
+    importance: 0.7
+    guidelines: |
+      - Build script optimization and caching
+      - Dependency management and security scanning
+      - Artifact versioning and tagging strategies
+      - Container image building and optimization
+      - Build reproducibility and environment consistency
+  
+  deployment_strategies:
+    description: "Deployment patterns and rollback procedures"
+    importance: 0.8
+    guidelines: |
+      - Blue-green and canary deployment strategies
+      - Feature flags and progressive rollouts
+      - Database migration automation
+      - Rollback procedures and disaster recovery
+      - Environment-specific configuration management
+  
+  infrastructure:
+    description: "Infrastructure automation and provisioning"
+    importance: 0.7
+    guidelines: |
+      - Infrastructure as code (IaC) implementation
+      - Cloud resource provisioning and management
+      - Configuration management and secrets handling
+      - Auto-scaling and resource optimization
+      - Cost optimization and resource monitoring
+  
+  monitoring:
+    description: "Deployment monitoring and observability"
+    importance: 0.6
+    guidelines: |
+      - Deployment success metrics and validation
+      - Application health checks and readiness probes
+      - Log aggregation and error tracking
+      - Performance monitoring post-deployment
+      - Alerting and incident response automation

@@ -1,0 +1,52 @@
+name: "Frontend Architecture"
+description: "Memory template for frontend application architecture"
+sections:
+  components:
+    description: "Component design and architecture"
+    importance: 0.8
+    guidelines: |
+      - Component hierarchy and composition patterns
+      - Reusable component library and design system
+      - Props interface design and validation
+      - Component lifecycle management
+      - Performance optimization with memoization
+  
+  state_management:
+    description: "Application state management"
+    importance: 0.9
+    guidelines: |
+      - Global state architecture (Redux, Zustand, Context)
+      - Local component state management
+      - Data flow patterns and unidirectional flow
+      - State normalization and data structures
+      - Side effects management and async operations
+  
+  routing:
+    description: "Navigation and routing architecture"
+    importance: 0.7
+    guidelines: |
+      - Route structure and nested routing
+      - Route guards and authentication flows
+      - Dynamic routing and parameter handling
+      - Code splitting and lazy loading
+      - SEO optimization and meta tag management
+  
+  styling:
+    description: "Styling architecture and design system"
+    importance: 0.6
+    guidelines: |
+      - CSS architecture (CSS-in-JS, modules, Tailwind)
+      - Design system implementation and theming
+      - Responsive design patterns and breakpoints
+      - Animation and transition implementations
+      - CSS performance optimization
+  
+  performance:
+    description: "Frontend performance optimization"
+    importance: 0.8
+    guidelines: |
+      - Bundle optimization and code splitting
+      - Image optimization and lazy loading
+      - Caching strategies and service workers
+      - Core web vitals monitoring and optimization
+      - Memory leak prevention and cleanup

@@ -1,0 +1,52 @@
+name: "Microservices Architecture"
+description: "Memory template for microservices design and implementation"
+sections:
+  service_design:
+    description: "Service boundaries and design patterns"
+    importance: 0.9
+    guidelines: |
+      - Domain-driven design and bounded contexts
+      - Service decomposition strategies
+      - API contract design and versioning
+      - Data ownership and database per service
+      - Service dependency mapping and coupling
+  
+  communication:
+    description: "Inter-service communication patterns"
+    importance: 0.8
+    guidelines: |
+      - Synchronous communication (REST, gRPC)
+      - Asynchronous messaging (pub/sub, event streaming)
+      - Service mesh configuration and routing
+      - Circuit breaker and retry patterns
+      - API gateway and load balancing
+  
+  deployment:
+    description: "Containerization and orchestration"
+    importance: 0.8
+    guidelines: |
+      - Docker containerization and optimization
+      - Kubernetes deployment and configuration
+      - Service discovery and configuration management
+      - Rolling deployments and blue-green strategies
+      - Infrastructure as code (Terraform, Helm)
+  
+  monitoring:
+    description: "Distributed tracing and monitoring"
+    importance: 0.7
+    guidelines: |
+      - Distributed tracing implementation
+      - Service metrics and health checks
+      - Centralized logging and log aggregation
+      - Performance monitoring and alerting
+      - Chaos engineering and resilience testing
+  
+  data_management:
+    description: "Data consistency and event sourcing"
+    importance: 0.8
+    guidelines: |
+      - Event sourcing and CQRS patterns
+      - Saga pattern for distributed transactions
+      - Data consistency strategies
+      - Event streaming and message ordering
+      - Data synchronization between services
