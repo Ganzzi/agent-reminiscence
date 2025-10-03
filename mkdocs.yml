@@ -1,10 +1,10 @@
 site_name: Agent Mem Documentation
 site_description: Hierarchical memory management for AI agents with vector search and graph relationships
 site_author: Agent Mem Team
-site_url: https://github.com/yourusername/agent-mem
+site_url: https://github.com/Ganzzi/agent-mem
 
-repo_name: yourusername/agent-mem
-repo_url: https://github.com/yourusername/agent-mem
+repo_name: Ganzzi/agent-mem
+repo_url: https://github.com/Ganzzi/agent-mem
 edit_uri: edit/main/docs/
 
 theme:
@@ -100,7 +100,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/yourusername/agent-mem
+      link: https://github.com/Ganzzi/agent-mem
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/agent-mem/
 

@@ -386,5 +386,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Support
 
 - **Documentation**: [Full Documentation](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/agent-mem/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/agent-mem/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Ganzzi/agent-mem/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Ganzzi/agent-mem/discussions)

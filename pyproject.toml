@@ -56,11 +56,11 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/agent-mem"
-Documentation = "https://github.com/yourusername/agent-mem/tree/main/docs"
-Repository = "https://github.com/yourusername/agent-mem"
-Issues = "https://github.com/yourusername/agent-mem/issues"
-Changelog = "https://github.com/yourusername/agent-mem/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Ganzzi/agent-mem"
+Documentation = "https://github.com/Ganzzi/agent-mem/tree/main/docs"
+Repository = "https://github.com/Ganzzi/agent-mem"
+Issues = "https://github.com/Ganzzi/agent-mem/issues"
+Changelog = "https://github.com/Ganzzi/agent-mem/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
