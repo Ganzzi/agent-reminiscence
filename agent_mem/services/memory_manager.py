@@ -211,10 +211,10 @@ class MemoryManager:
 
         # Check consolidation threshold and trigger consolidation if needed
         section = memory.sections.get(section_id)
-        if section and section["update_count"] >= self.config.active_memory_update_threshold:
+        if section and section["update_count"] >= self.config.consolidation_threshold:
             logger.info(
                 f"Section '{section_id}' reached consolidation threshold "
-                f"({section['update_count']} >= {self.config.active_memory_update_threshold}). "
+                f"({section['update_count']} >= {self.config.consolidation_threshold}). "
                 f"Triggering consolidation..."
             )
             try:

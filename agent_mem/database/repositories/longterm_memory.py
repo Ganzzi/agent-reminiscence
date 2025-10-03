@@ -104,7 +104,7 @@ class LongtermMemoryRepository:
                     confidence_score,
                     importance_score,
                     start_date or datetime.now(timezone.utc),
-                    json.dumps(metadata or {}),
+                    metadata or {},
                 ],
             )
 
@@ -277,7 +277,7 @@ class LongtermMemoryRepository:
 
         if metadata is not None:
             updates.append(f"metadata = ${param_idx}")
-            params.append(json.dumps(metadata))
+            params.append(metadata)
             param_idx += 1
 
         if not updates:

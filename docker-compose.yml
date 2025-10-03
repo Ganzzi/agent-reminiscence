@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database with pgvector and pg_bm25
   postgres:

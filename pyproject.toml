@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Agent Mem Contributors", email = ""}
+    {name = "Agent Mem Contributors"}
 ]
 maintainers = [
-    {name = "Agent Mem Contributors", email = ""}
+    {name = "Agent Mem Contributors"}
 ]
 keywords = ["ai", "memory", "agents", "vector-search", "graph", "pydantic-ai", "llm", "rag", "knowledge-graph"]
 classifiers = [
@@ -37,6 +37,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
     "asyncio>=3.4.3",
+    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]

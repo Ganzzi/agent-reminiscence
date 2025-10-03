@@ -22,14 +22,39 @@ The agent_mem package now has:
 
 ## Quick Setup
 
+> **For Windows Users**: Use the Python launcher `py` instead of `python` if you encounter command not found errors. Example: `py -m pip install -e .`
+
 ### 1. Install Dependencies
 
+**Linux/Mac:**
 ```bash
 cd libs/agent_mem
 pip install -e .
 ```
 
+**Windows (PowerShell):**
+```powershell
+cd libs\agent_mem
+py -m pip install -e .
+```
+
 ### 2. Set Up Databases
+
+**Using Docker Compose (Recommended):**
+
+The easiest way is to use the provided Docker Compose configuration:
+
+```bash
+# Start all services (PostgreSQL, Neo4j, Ollama)
+docker compose up -d
+
+# Check services are running
+docker compose ps
+
+# Wait for services to be healthy (30-60 seconds)
+```
+
+**Manual Setup:**
 
 **PostgreSQL with Extensions:**
 
@@ -100,9 +125,16 @@ MEMORY_RETRIEVE_AGENT_MODEL=google-gla:gemini-2.0-flash
 
 ### 4. Run Example
 
+**Linux/Mac:**
 ```bash
 cd libs/agent_mem
 python examples/basic_usage.py
+```
+
+**Windows (PowerShell):**
+```powershell
+cd libs\agent_mem
+py examples\basic_usage.py
 ```
 
 Expected output:
@@ -379,8 +411,20 @@ pip install -e .
 
 - **Architecture**: See `docs/ARCHITECTURE.md`
 - **Development Guide**: See `docs/DEVELOPMENT.md`
+- **Bug Fixes**: See `docs/BUG_FIXES.md` for resolved issues
+- **Quick Start**: See `docs/QUICKSTART.md` for 5-minute setup
 - **Main Codebase**: Reference `../../` for examples
 - **Pydantic AI Docs**: https://ai.pydantic.dev/
 - **PSQLPy Docs**: https://github.com/qaspen-python/psqlpy
+
+## Known Issues and Fixes
+
+All critical bugs have been fixed in v0.1.0. See [docs/BUG_FIXES.md](BUG_FIXES.md) for details on:
+
+- ✅ JSON serialization with psqlpy (fixed - use raw dicts, not `json.dumps()`)
+- ✅ Database row access (fixed - use column names, not numeric indexes)
+- ✅ Config attribute naming (fixed - `consolidation_threshold`)
+- ✅ NumPy dependency (fixed - added to `pyproject.toml`)
+- ✅ Docker Compose version attribute (fixed - removed obsolete attribute)
 
 Happy coding! 🎉

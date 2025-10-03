@@ -85,8 +85,8 @@ class ActiveMemoryRepository:
                     external_id,
                     title,
                     template_content,
-                    json.dumps(sections),
-                    json.dumps(metadata),
+                    sections,  # psqlpy expects dict/list, not JSON string
+                    metadata,  # psqlpy expects dict/list, not JSON string
                 ],
             )
 
@@ -215,7 +215,7 @@ class ActiveMemoryRepository:
         """
 
         async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [json.dumps(updated_sections), memory_id])
+            result = await conn.execute(query, [updated_sections, memory_id])
             rows = result.result()
 
             if not rows:
@@ -259,7 +259,7 @@ class ActiveMemoryRepository:
         """
 
         async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [json.dumps(metadata), memory_id])
+            result = await conn.execute(query, [metadata, memory_id])
             rows = result.result()
 
             if not rows:
@@ -372,7 +372,7 @@ class ActiveMemoryRepository:
         """
 
         async with self.postgres.connection() as conn:
-            await conn.execute(query, [json.dumps(updated_sections), memory_id])
+            await conn.execute(query, [updated_sections, memory_id])
             logger.info(f"Reset update_count for section '{section_id}' in memory {memory_id}")
             return True
 
@@ -391,7 +391,7 @@ class ActiveMemoryRepository:
         async with self.postgres.connection() as conn:
             result = await conn.execute(query, [external_id])
             row = result.result()[0]
-            count = row[0]
+            count = row["count"]
 
             logger.debug(f"Active memory count for {external_id}: {count}")
             return count
@@ -401,19 +401,19 @@ class ActiveMemoryRepository:
         Convert a database row to an ActiveMemory model.
 
         Args:
-            row: Database row tuple
+            row: Database row dict
 
         Returns:
             ActiveMemory object
         """
-        # Row format: id, external_id, title, template_content, sections, metadata, created_at, updated_at
+        # Row is a dict with column names as keys
         return ActiveMemory(
-            id=row[0],
-            external_id=row[1],
-            title=row[2],
-            template_content=row[3],
-            sections=row[4] if isinstance(row[4], dict) else {},
-            metadata=row[5] if isinstance(row[5], dict) else {},
-            created_at=row[6],
-            updated_at=row[7],
+            id=row["id"],
+            external_id=row["external_id"],
+            title=row["title"],
+            template_content=row["template_content"],
+            sections=row["sections"] if isinstance(row["sections"], dict) else {},
+            metadata=row["metadata"] if isinstance(row["metadata"], dict) else {},
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )

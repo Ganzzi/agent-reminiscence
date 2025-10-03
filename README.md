@@ -6,6 +6,8 @@ A standalone Python package for hierarchical memory management in AI agents. Pro
 
 - **📚 Documentation Index**: See [docs/INDEX.md](docs/INDEX.md) for all documentation
 - **🎯 Getting Started**: See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for setup and testing
+- **⚡ Quick Start**: See [docs/QUICKSTART.md](docs/QUICKSTART.md) for 5-minute setup
+- **🐛 Bug Fixes**: See [docs/BUG_FIXES.md](docs/BUG_FIXES.md) for resolved issues
 - **🏗️ Architecture**: See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design
 - **👨‍💻 Development**: See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for implementation guide
 - **📊 Progress**: See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for current status
@@ -45,16 +47,38 @@ A standalone Python package for hierarchical memory management in AI agents. Pro
 
 ### Installation
 
+**Linux/Mac:**
 ```bash
-# Install the package
 cd libs/agent_mem
 pip install -e .
+```
 
-# Or add to your project's requirements
+**Windows:**
+```powershell
+cd libs\agent_mem
+py -m pip install -e .
+```
+
+Or add to your project's requirements:
+```bash
 echo "agent-mem @ file:///${PWD}/libs/agent_mem" >> requirements.txt
 ```
 
 ### Prerequisites
+
+**Using Docker Compose (Recommended):**
+
+The easiest way is to use the provided Docker Compose configuration:
+
+```bash
+# Start all services (PostgreSQL, Neo4j, Ollama)
+docker compose up -d
+
+# Check services are running
+docker compose ps
+```
+
+**Manual Setup:**
 
 1. **PostgreSQL** with extensions:
    - `pgvector` for vector storage

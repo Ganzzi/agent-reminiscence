@@ -26,8 +26,25 @@ This directory contains all documentation for the `agent_mem` package - a sophis
   Installation, setup, and basic usage examples
   - Prerequisites and dependencies
   - Database configuration (PostgreSQL + Neo4j)
+  - Docker Compose setup (recommended)
+  - Windows and Linux/Mac instructions
   - First memory operations
   - Common patterns
+
+- **[QUICKSTART.md](QUICKSTART.md)**  
+  5-minute quick start guide
+  - Automated setup scripts
+  - Service verification
+  - Basic examples
+  - Troubleshooting
+
+- **[BUG_FIXES.md](BUG_FIXES.md)**  
+  Fixed issues in v0.1.0
+  - JSON serialization with psqlpy
+  - Database row access patterns
+  - Configuration attribute naming
+  - NumPy dependency
+  - Docker Compose updates
 
 ### Architecture & Design
 

@@ -77,7 +77,7 @@ class ShorttermMemoryRepository:
         async with self.postgres.connection() as conn:
             result = await conn.execute(
                 query,
-                [external_id, title, summary, json.dumps(metadata or {})],
+                [external_id, title, summary, metadata or {}],
             )
 
             row = result.result()[0]
@@ -178,7 +178,7 @@ class ShorttermMemoryRepository:
 
         if metadata is not None:
             updates.append(f"metadata = ${param_idx}")
-            params.append(json.dumps(metadata))
+            params.append(metadata)
             param_idx += 1
 
         if not updates:
@@ -274,7 +274,7 @@ class ShorttermMemoryRepository:
                     content,
                     chunk_order,
                     embedding_str,
-                    json.dumps(metadata or {}),
+                    metadata or {},
                 ],
             )
 
@@ -375,7 +375,7 @@ class ShorttermMemoryRepository:
 
         if metadata is not None:
             updates.append(f"metadata = ${param_idx}")
-            params.append(json.dumps(metadata))
+            params.append(metadata)
             param_idx += 1
 
         if not updates:
