@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with pgvector and pg_bm25
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agent_mem_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agent_mem_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_mem_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-agent_mem}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./agent_mem/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent_mem_user} -d ${POSTGRES_DB:-agent_mem}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent_mem_network
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: agent_mem_neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-agent_mem_neo4j_dev}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_memory_pagecache_size: 512M
+      NEO4J_dbms_memory_heap_initial__size: 512M
+      NEO4J_dbms_memory_heap_max__size: 1G
+    ports:
+      - "7687:7687"  # Bolt protocol
+      - "7474:7474"  # HTTP
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-agent_mem_neo4j_dev} 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent_mem_network
+
+  # Ollama for embeddings and AI models
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agent_mem_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ${OLLAMA_HOST_VOLUME_PATH:-./ollama_data}:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent_mem_network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - gpu
+# For CPU-only deployment, start with: docker-compose up -d
+# For GPU deployment, start with: docker-compose --profile gpu up -d
+
+volumes:
+  postgres_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+# ollama_data removed - using Z:/Ollama direct mount instead
+
+networks:
+  agent_mem_network:
+    driver: bridge

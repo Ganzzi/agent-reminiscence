@@ -1,0 +1,129 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+*.whl
+pip-wheel-metadata/
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+nosetests.xml
+test-results/
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+
+# Environment variables (keep .env.example)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+
+# Documentation build files
+docs/_build/
+docs/.buildinfo
+site/
+.doctrees/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Ollama data (if stored locally)
+ollama_data/
+
+# Neo4j data
+neo4j_data/
+neo4j_logs/
+
+# PostgreSQL data
+postgres_data/
+
+# Coverage reports
+.coverage.*
+coverage/
+
+# Profiling data
+*.prof
+
+# Security
+*.pem
+*.key
+*.crt
+*.csr
+secrets/
+.secrets/

@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-mem"
+version = "0.1.0"
+description = "Hierarchical memory management for AI agents with vector search and graph relationships"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Agent Mem Contributors", email = ""}
+]
+maintainers = [
+    {name = "Agent Mem Contributors", email = ""}
+]
+keywords = ["ai", "memory", "agents", "vector-search", "graph", "pydantic-ai", "llm", "rag", "knowledge-graph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+]
+
+dependencies = [
+    "pydantic>=2.0.0",
+    "pydantic-ai>=0.0.49",
+    "psqlpy>=0.10.0",
+    "neo4j>=5.0.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "asyncio>=3.4.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/agent-mem"
+Documentation = "https://github.com/yourusername/agent-mem/tree/main/docs"
+Repository = "https://github.com/yourusername/agent-mem"
+Issues = "https://github.com/yourusername/agent-mem/issues"
+Changelog = "https://github.com/yourusername/agent-mem/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_mem*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --cov=agent_mem --cov-report=term-missing"

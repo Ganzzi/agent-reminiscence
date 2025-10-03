@@ -1,0 +1,108 @@
+site_name: Agent Mem Documentation
+site_description: Hierarchical memory management for AI agents with vector search and graph relationships
+site_author: Agent Mem Team
+site_url: https://github.com/yourusername/agent-mem
+
+repo_name: yourusername/agent-mem
+repo_url: https://github.com/yourusername/agent-mem
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_object_full_path: false
+            members_order: source
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quickstart.md
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+  - User Guide:
+    - Overview: guide/overview.md
+    - Memory Tiers: guide/memory-tiers.md
+    - Active Memory: guide/active-memory.md
+    - Memory Retrieval: guide/memory-retrieval.md
+    - Best Practices: guide/best-practices.md
+  - API Reference:
+    - AgentMem: api/agent-mem.md
+    - Models: api/models.md
+    - Configuration: api/configuration.md
+  - Deployment:
+    - Docker Setup: deployment/docker.md
+    - Production: deployment/production.md
+  - Architecture:
+    - System Design: architecture/design.md
+    - Database Schema: architecture/database.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Testing: development/testing.md
+    - Development Guide: DEVELOPMENT.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/agent-mem
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/agent-mem/
+
+extra_css:
+  - stylesheets/extra.css

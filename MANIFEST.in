@@ -1,0 +1,34 @@
+# Include important files
+include README.md
+include LICENSE
+include CONTRIBUTING.md
+include CHANGELOG.md
+include pyproject.toml
+include pytest.ini
+include requirements-test.txt
+include docker-compose.yml
+include .env.example
+include mkdocs.yml
+
+# Include all documentation
+recursive-include docs *.md
+recursive-include docs *.png
+recursive-include docs *.jpg
+
+# Include examples
+recursive-include examples *.py
+
+# Include SQL scripts
+recursive-include agent_mem/sql *.sql
+
+# Exclude development and build artifacts
+exclude .dockerignore
+exclude .coverage
+exclude coverage.xml
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * *.egg-info
+recursive-exclude htmlcov *
+recursive-exclude .pytest_cache *
+recursive-exclude .venv *
+recursive-exclude tests *
