@@ -250,6 +250,47 @@ class AgentMem:
             new_content=new_content,
         )
 
+    async def delete_active_memory(
+        self,
+        external_id: str | UUID | int,
+        memory_id: int,
+    ) -> bool:
+        """
+        Delete an active memory and all its sections.
+
+        This permanently removes the memory from the database. This action cannot be undone.
+
+        Args:
+            external_id: Unique identifier for the agent
+            memory_id: ID of the memory to delete
+
+        Returns:
+            True if memory was deleted, False if not found
+
+        Raises:
+            RuntimeError: If not initialized
+
+        Example:
+            ```python
+            success = await agent_mem.delete_active_memory(
+                external_id="agent-123",
+                memory_id=42
+            )
+            if success:
+                print("Memory deleted successfully")
+            else:
+                print("Memory not found")
+            ```
+        """
+        self._ensure_initialized()
+        external_id_str = str(external_id)
+
+        logger.info(f"Deleting memory {memory_id} for {external_id_str}")
+        return await self._memory_manager.delete_active_memory(
+            external_id=external_id_str,
+            memory_id=memory_id,
+        )
+
     async def retrieve_memories(
         self,
         external_id: str | UUID | int,

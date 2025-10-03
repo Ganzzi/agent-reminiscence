@@ -1,6 +1,7 @@
 """
 Streamlit UI Configuration
 """
+
 import os
 from pathlib import Path
 
@@ -16,7 +17,7 @@ PAGE_LAYOUT = "wide"
 # Agent types (corresponds to template directories)
 AGENT_TYPES = [
     "analyst",
-    "architect", 
+    "architect",
     "dev",
     "pm",
     "po",
@@ -45,12 +46,13 @@ AGENT_DISPLAY_NAMES = {
 DB_CONFIG = {
     "postgres_host": os.getenv("POSTGRES_HOST", "localhost"),
     "postgres_port": int(os.getenv("POSTGRES_PORT", 5432)),
-    "postgres_db": os.getenv("POSTGRES_DB", "agent_memory"),
+    "postgres_db": os.getenv("POSTGRES_DB", "agent_mem"),
     "postgres_user": os.getenv("POSTGRES_USER", "postgres"),
     "postgres_password": os.getenv("POSTGRES_PASSWORD", "postgres"),
     "neo4j_uri": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
     "neo4j_user": os.getenv("NEO4J_USER", "neo4j"),
-    "neo4j_password": os.getenv("NEO4J_PASSWORD", "password"),
+    "neo4j_password": os.getenv("NEO4J_PASSWORD", "neo4jpassword"),
+    "neo4j_database": os.getenv("NEO4J_DATABASE", "agent_mem"),
 }
 
 # Memory consolidation thresholds

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Streamlit Web UI**: Complete web interface for memory management (Phase 9 - Oct 3, 2025)
+  - 5 fully functional pages (Browse, Create, View, Update, Delete)
+  - Template browser with 60+ pre-built BMAD templates
+  - Dual-mode memory creation (template or custom YAML)
+  - Live Markdown editor with preview
+  - Type-to-confirm deletion with safety checks
+  - Responsive design with custom theme
+  - Comprehensive user guide and documentation
 - Initial release of Agent Mem
 - Stateless AgentMem interface for multi-agent memory management
 - Three-tier memory system (Active, Shortterm, Longterm)

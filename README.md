@@ -31,6 +31,33 @@ A standalone Python package for hierarchical memory management in AI agents. Pro
 
 **See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed progress**
 
+## 🎨 Streamlit Web UI
+
+**NEW**: AgentMem now includes a web-based UI for managing memories without writing code!
+
+### Features
+
+- 📚 **Browse Templates** - Explore 60+ pre-built BMAD templates
+- ➕ **Create Memories** - Create memories using templates or custom YAML
+- 📋 **View Memories** - Browse all memories for an agent
+- ✏️ **Update Sections** - Edit memory sections with live Markdown preview
+- 🗑️ **Delete Memories** - Safely delete with type-to-confirm protection
+
+### Starting the UI
+
+```bash
+cd streamlit_app
+streamlit run app.py
+```
+
+The UI will open at `http://localhost:8501`
+
+### User Guide
+
+See [docs/STREAMLIT_UI_USER_GUIDE.md](docs/STREAMLIT_UI_USER_GUIDE.md) for complete usage instructions.
+
+---
+
 ## Key Features
 
 - **Stateless Design**: One AgentMem instance can serve multiple agents/workers

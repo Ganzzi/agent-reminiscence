@@ -41,16 +41,16 @@ def event_loop():
 def test_config() -> Config:
     """Create a test configuration."""
     return Config(
-        postgres_host=os.getenv("POSTGRES_HOST", "localhost"),
-        postgres_port=int(os.getenv("POSTGRES_PORT", "5432")),
-        postgres_db=os.getenv("POSTGRES_DB", "agent_mem_test"),
-        postgres_user=os.getenv("POSTGRES_USER", "postgres"),
-        postgres_password=os.getenv("POSTGRES_PASSWORD", "postgres"),
-        neo4j_uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
-        neo4j_password=os.getenv("NEO4J_PASSWORD", "password"),
-        ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-        embedding_model=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
+        postgres_host="localhost",
+        postgres_port=5432,
+        postgres_db="agent_mem_test",
+        postgres_user="postgres",
+        postgres_password="postgres",
+        neo4j_uri="bolt://localhost:7687",
+        neo4j_user="neo4j",
+        neo4j_password="password123",  # Must be at least 8 chars
+        ollama_base_url="http://localhost:11434",
+        embedding_model="nomic-embed-text",
         consolidation_threshold=3,
         promotion_importance_threshold=0.7,
         entity_similarity_threshold=0.85,

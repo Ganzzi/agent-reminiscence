@@ -396,6 +396,37 @@ class ActiveMemoryRepository:
             logger.debug(f"Active memory count for {external_id}: {count}")
             return count
 
+    async def delete(self, memory_id: int) -> bool:
+        """
+        Delete an active memory by ID.
+
+        This permanently removes the memory and all associated data.
+        Sections are stored in JSONB so they are automatically deleted with the memory.
+
+        Args:
+            memory_id: Memory ID to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        query = "DELETE FROM active_memory WHERE id = $1"
+
+        async with self.postgres.connection() as conn:
+            try:
+                result = await conn.execute(query, [memory_id])
+                deleted = result.result().rowcount > 0
+
+                if deleted:
+                    logger.info(f"Deleted active memory {memory_id}")
+                else:
+                    logger.warning(f"Active memory {memory_id} not found for deletion")
+
+                return deleted
+
+            except Exception as e:
+                logger.error(f"Error deleting active memory {memory_id}: {e}", exc_info=True)
+                raise
+
     def _row_to_model(self, row) -> ActiveMemory:
         """
         Convert a database row to an ActiveMemory model.

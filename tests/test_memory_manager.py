@@ -120,7 +120,7 @@ class TestMemoryManagerActiveMemory:
 
             # Replace config with a MagicMock that allows attribute assignment
             mock_config = MagicMock()
-            mock_config.active_memory_update_threshold = 5
+            mock_config.consolidation_threshold = 5
             manager.config = mock_config
 
             # Mock the repository
@@ -163,7 +163,7 @@ class TestMemoryManagerActiveMemory:
 
             # Replace config with a MagicMock that allows attribute assignment
             mock_config = MagicMock()
-            mock_config.active_memory_update_threshold = 3
+            mock_config.consolidation_threshold = 3
             manager.config = mock_config
 
             # Mock consolidation method
@@ -195,6 +195,150 @@ class TestMemoryManagerActiveMemory:
 
             # Check that consolidation was triggered
             manager._consolidate_to_shortterm.assert_called_once_with("test-123", memory_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_active_memory_success(self, test_config):
+        """Test successful deletion of active memory."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Mock the repository
+            mock_repo = MagicMock()
+            memory_id = 1
+            mock_memory = ActiveMemory(
+                id=memory_id,
+                external_id="test-123",
+                title="Test Memory",
+                template_content="# Template",
+                sections={"summary": {"content": "Test", "update_count": 0}},
+                metadata={},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
+            mock_repo.get_by_id = AsyncMock(return_value=mock_memory)
+            mock_repo.delete = AsyncMock(return_value=True)
+            manager.active_repo = mock_repo
+
+            result = await manager.delete_active_memory(
+                external_id="test-123",
+                memory_id=memory_id,
+            )
+
+            assert result is True
+            mock_repo.get_by_id.assert_called_once_with(memory_id)
+            mock_repo.delete.assert_called_once_with(memory_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_active_memory_not_found(self, test_config):
+        """Test deletion when memory is not found."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Mock the repository
+            mock_repo = MagicMock()
+            memory_id = 999
+
+            mock_repo.get_by_id = AsyncMock(return_value=None)
+            manager.active_repo = mock_repo
+
+            result = await manager.delete_active_memory(
+                external_id="test-123",
+                memory_id=memory_id,
+            )
+
+            assert result is False
+            mock_repo.get_by_id.assert_called_once_with(memory_id)
+            mock_repo.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_active_memory_wrong_agent(self, test_config):
+        """Test deletion when memory belongs to different agent."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Mock the repository
+            mock_repo = MagicMock()
+            memory_id = 1
+            mock_memory = ActiveMemory(
+                id=memory_id,
+                external_id="different-agent",  # Different external_id
+                title="Test Memory",
+                template_content="# Template",
+                sections={"summary": {"content": "Test", "update_count": 0}},
+                metadata={},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
+            mock_repo.get_by_id = AsyncMock(return_value=mock_memory)
+            manager.active_repo = mock_repo
+
+            result = await manager.delete_active_memory(
+                external_id="test-123",
+                memory_id=memory_id,
+            )
+
+            assert result is False
+            mock_repo.get_by_id.assert_called_once_with(memory_id)
+            mock_repo.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_active_memory_delete_fails(self, test_config):
+        """Test deletion when repository delete operation fails."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Mock the repository
+            mock_repo = MagicMock()
+            memory_id = 1
+            mock_memory = ActiveMemory(
+                id=memory_id,
+                external_id="test-123",
+                title="Test Memory",
+                template_content="# Template",
+                sections={"summary": {"content": "Test", "update_count": 0}},
+                metadata={},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
+            mock_repo.get_by_id = AsyncMock(return_value=mock_memory)
+            mock_repo.delete = AsyncMock(return_value=False)  # Delete fails
+            manager.active_repo = mock_repo
+
+            result = await manager.delete_active_memory(
+                external_id="test-123",
+                memory_id=memory_id,
+            )
+
+            assert result is False
+            mock_repo.get_by_id.assert_called_once_with(memory_id)
+            mock_repo.delete.assert_called_once_with(memory_id)
 
 
 class TestMemoryManagerConsolidation:
@@ -395,4 +539,3 @@ class TestMemoryManagerHelpers:
 
             # 0.9 * 1.2 = 1.08, but should be capped at 1.0
             assert importance == 1.0
-

@@ -103,11 +103,11 @@ streamlit_app/
 ├── requirements.txt                # 5 dependencies
 ├── README.md                       # Documentation
 ├── pages/
-│   ├── 1_📚_Browse_Templates.py   # Placeholder
-│   ├── 2_➕_Create_Memory.py       # Placeholder
-│   ├── 3_📋_View_Memories.py       # Placeholder
-│   ├── 4_✏️_Update_Memory.py       # Placeholder
-│   └── 5_🗑️_Delete_Memory.py      # Placeholder
+│   ├── 1_Browse_Templates.py   # Placeholder
+│   ├── 2_Create_Memory.py       # Placeholder
+│   ├── 3_View_Memories.py       # Placeholder
+│   ├── 4_Update_Memory.py       # Placeholder
+│   └── 5_Delete_Memory.py      # Placeholder
 ├── components/
 │   └── __init__.py
 ├── services/

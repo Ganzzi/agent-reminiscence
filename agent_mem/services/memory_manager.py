@@ -225,6 +225,41 @@ class MemoryManager:
 
         return memory
 
+    async def delete_active_memory(
+        self,
+        external_id: str,
+        memory_id: int,
+    ) -> bool:
+        """
+        Delete an active memory and all its sections.
+
+        Args:
+            external_id: Agent identifier
+            memory_id: Memory ID to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        self._ensure_initialized()
+
+        logger.info(f"Deleting active memory {memory_id} for {external_id}")
+
+        # Verify memory exists and belongs to this agent
+        memory = await self.active_repo.get_by_id(memory_id)
+        if not memory or memory.external_id != external_id:
+            logger.warning(f"Memory {memory_id} not found or does not belong to {external_id}")
+            return False
+
+        # Delete the memory (repository will handle cascade delete of sections)
+        success = await self.active_repo.delete(memory_id)
+
+        if success:
+            logger.info(f"Deleted active memory {memory_id} for {external_id}")
+        else:
+            logger.warning(f"Failed to delete memory {memory_id}")
+
+        return success
+
     async def retrieve_memories(
         self,
         external_id: str,

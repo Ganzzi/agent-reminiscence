@@ -1,9 +1,9 @@
 # Agent Mem Documentation Index
 
-**Last Updated**: October 2, 2025  
+**Last Updated**: October 3, 2025  
 **Package Version**: 0.1.0
 
-This directory contains all documentation for the `agent_mem` package - a sophisticated three-tier memory system for AI agents.
+This directory contains all documentation for the `agent_mem` package - a sophisticated three-tier memory system for AI agents with a web-based UI.
 
 ---
 
@@ -14,7 +14,8 @@ This directory contains all documentation for the `agent_mem` package - a sophis
 1. **[README.md](../README.md)** - Package overview and quick start
 2. **[QUICKSTART.md](QUICKSTART.md)** - 5-minute setup guide
 3. **[GETTING_STARTED.md](GETTING_STARTED.md)** - Installation and first steps
-4. **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
+4. **[STREAMLIT_UI_USER_GUIDE.md](STREAMLIT_UI_USER_GUIDE.md)** - Web UI user guide
+5. **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
 
 ---
 
@@ -45,6 +46,27 @@ This directory contains all documentation for the `agent_mem` package - a sophis
   - Configuration attribute naming
   - NumPy dependency
   - Docker Compose updates
+
+### Streamlit Web UI
+
+- **[STREAMLIT_UI_USER_GUIDE.md](STREAMLIT_UI_USER_GUIDE.md)**  
+  Complete guide to using the web interface
+  - Getting started with the UI
+  - Browse and preview 60+ pre-built BMAD templates
+  - Create memories using templates or custom YAML
+  - View and manage agent memories
+  - Update memory sections with live preview
+  - Delete memories with safety checks
+  - Common workflows and best practices
+  - Troubleshooting guide
+
+- **[STREAMLIT_UI_PLAN.md](STREAMLIT_UI_PLAN.md)**  
+  Implementation plan and technical details
+  - Architecture and components
+  - Feature breakdown (5 pages)
+  - Implementation checklist (24 tasks)
+  - API integration status
+  - Development timeline
 
 ### Architecture & Design
 
@@ -92,8 +114,9 @@ This directory contains all documentation for the `agent_mem` package - a sophis
   - ✅ Phase 2: Memory Tiers (100%)
   - ✅ Phase 3: Memory Manager (100%)
   - ✅ Phase 4: AI Agents (100%)
-  - ⏸️ Phase 5: Testing (Not started)
-  - Overall: **58% complete** (48/82 tasks)
+  - ✅ Phase 5: Testing (100%)
+  - ✅ Phase 9: Streamlit UI (100%)
+  - Overall: **93% complete** (107/126 tasks)
 
 ### Phase 4: AI-Enhanced Memory
 
@@ -181,6 +204,18 @@ agent_mem/
 │   │   ├── memory_manager.py # Core orchestration
 │   │   └── embedding.py      # Ollama embeddings
 │   └── utils/                # Chunking, helpers
+├── streamlit_app/            # ✨ Web UI
+│   ├── app.py                # Main Streamlit app
+│   ├── config.py             # UI configuration
+│   ├── pages/                # 5 UI pages
+│   │   ├── 1_📚_Browse_Templates.py
+│   │   ├── 2_Create_Memory.py
+│   │   ├── 3_View_Memories.py
+│   │   ├── 4_Update_Memory.py
+│   │   └── 5_Delete_Memory.py
+│   ├── components/           # Reusable UI components
+│   ├── services/             # API wrappers
+│   └── utils/                # UI helpers
 ├── docs/                     # Documentation (you are here)
 ├── examples/                 # Usage examples
 └── README.md                 # Package overview
