@@ -86,6 +86,53 @@ This directory contains all documentation for the `agent_mem` package - a sophis
   - Testing guidelines
   - Adding new features
 
+### MCP Server ✅
+
+**Status**: ✅ **COMPLETE AND OPERATIONAL**
+
+The MCP server is located at `agent_mem_mcp/` (root level) and provides three tools for Claude Desktop integration.
+
+- **[MCP Server README](../agent_mem_mcp/README.md)** ⭐ **START HERE**
+  Comprehensive guide to using the MCP server
+  - Tool specifications and examples
+  - Claude Desktop integration guide
+  - Architecture and design decisions
+  - Troubleshooting section
+
+- **[Getting Started with MCP](GETTING_STARTED_MCP.md)**  
+  Quick start guide for MCP server
+  - Service setup instructions
+  - Testing procedures
+  - Environment configuration
+  - Tool usage examples
+
+- **[MCP Server Status](MCP_SERVER_STATUS.md)**  
+  Complete implementation status report
+  - System status and test results
+  - Usage examples for all 3 tools
+  - Next steps and optional features
+  - Success metrics
+
+- **[MCP_IMPLEMENTATION_COMPLETE.md](MCP_IMPLEMENTATION_COMPLETE.md)**  
+  Technical implementation summary
+  - Module structure and files created
+  - Available tools documentation
+  - Implementation details and design decisions
+  - Testing checklist
+
+- **[MCP_SERVER_IMPLEMENTATION_PLAN.md](MCP_SERVER_IMPLEMENTATION_PLAN.md)**  
+  Original implementation plan (now complete)
+  - Architecture and design decisions
+  - Phase-by-phase implementation guide
+  - Detailed code examples
+  - Success criteria (all achieved)
+
+- **[MCP_SERVER_CHECKLIST.md](MCP_SERVER_CHECKLIST.md)**  
+  Implementation progress checklist
+  - All phases completed ✅
+  - Quick commands reference
+  - Milestone tracking
+
 ### Meta Documentation
 
 - **[STRUCTURE.md](STRUCTURE.md)**  

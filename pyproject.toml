@@ -50,11 +50,18 @@ dev = [
     "mypy>=1.5.0",
 ]
 
+mcp = [
+    "mcp[cli]>=1.0.0",
+]
+
 docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
     "mkdocstrings[python]>=0.24.0",
 ]
+
+# Note: MCP server is located at agent_mem_mcp/ (root level, outside package)
+# Run directly with: py -m agent_mem_mcp or py agent_mem_mcp/run.py
 
 [project.urls]
 Homepage = "https://github.com/Ganzzi/agent-mem"

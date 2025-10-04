@@ -58,6 +58,76 @@ See [docs/STREAMLIT_UI_USER_GUIDE.md](docs/STREAMLIT_UI_USER_GUIDE.md) for compl
 
 ---
 
+## 🔌 MCP Server for Claude Desktop
+
+**NEW**: AgentMem now includes a Model Context Protocol (MCP) server for integration with Claude Desktop and other MCP clients!
+
+### Features
+
+- 🔍 **get_active_memories** - Retrieve all active memories for an agent
+- 📝 **update_memory_sections** - Batch update multiple sections at once
+- 🔎 **search_memories** - Search across memory tiers with AI-synthesized responses
+
+### Quick Start
+
+```powershell
+# Run the MCP server (recommended: using uv)
+uv run agent_mem_mcp\run.py
+
+# Alternative: using Python directly
+py agent_mem_mcp\run.py
+
+# Add sample data for testing
+uv run agent_mem_mcp\tests\add_sample_data.py
+
+# Test with Python client
+uv run agent_mem_mcp\tests\test_mcp_client.py
+```
+
+### Claude Desktop Integration
+
+Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "agent-mem": {
+      "command": "uv",
+      "args": [
+        "run",
+        "path_to_agent_mem_mcp\\run.py"
+      ],
+      "env": {
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_USER": "postgres",
+        "POSTGRES_PASSWORD": "postgres",
+        "POSTGRES_DB": "agent_mem",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "neo4jpassword",
+        "OLLAMA_BASE_URL": "http://localhost:11434"
+      }
+    }
+  }
+}
+```
+
+**Important**: 
+- Use `uv` command for better dependency management
+- Use absolute path (adjust to your installation directory)
+- Ensure environment variables match your `.env` file
+- Double backslashes required in JSON on Windows
+
+### Documentation
+
+- **[MCP Server README](agent_mem_mcp/README.md)** - Complete MCP server documentation
+- **[Getting Started with MCP](docs/GETTING_STARTED_MCP.md)** - Quick start guide
+- **[MCP Server Status](docs/MCP_SERVER_STATUS.md)** - Implementation status
+- **[Implementation Details](docs/MCP_IMPLEMENTATION_COMPLETE.md)** - Technical details
+
+---
+
 ## Key Features
 
 - **Stateless Design**: One AgentMem instance can serve multiple agents/workers
