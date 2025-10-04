@@ -22,7 +22,7 @@ agent_mem_mcp/
 ## 🎯 Three Tools
 
 1. **`get_active_memories`** - Get all active memories for an agent
-2. **`update_memory_section`** - Update a specific section in a memory
+2. **`update_memory_sections`** - Batch update multiple sections at once
 3. **`search_memories`** - Search across memory tiers (shortterm/longterm)
 
 ---
@@ -64,15 +64,20 @@ py agent_mem_mcp/test_server.py
 ### Run the Server
 
 ```powershell
-# Method 1: Direct run
+# Method 1: Using uv (recommended)
+uv run agent_mem_mcp/run.py
+
+# Method 2: Direct run with Python
 py agent_mem_mcp/run.py
 
-# Method 2: As module
+# Method 3: As module
 py -m agent_mem_mcp
 
-# Method 3: With MCP Inspector
+# Method 4: With MCP Inspector
 mcp dev mcp_dev.py
 ```
+
+**Logs**: Server logs are written to `agent_mem_mcp/logs/mcp_server_TIMESTAMP.log`
 
 ---
 
@@ -86,9 +91,10 @@ Add to your Claude Desktop config file:
 {
   "mcpServers": {
     "agent-mem": {
-      "command": "py",
+      "command": "uv",
       "args": [
-        "C:\\Users\\Administrator\\Desktop\\ai-army\\libs\\agent_mem\\agent_mem_mcp\\run.py"
+        "run",
+        "path_to_agent_mem_mcp\\run.py"
       ],
       "env": {
         "POSTGRES_HOST": "localhost",
@@ -106,7 +112,11 @@ Add to your Claude Desktop config file:
 }
 ```
 
-**Important**: Use absolute path for reliability. Adjust the path to match your installation directory.
+**Important**: 
+- Use `uv` command for better dependency management
+- Use absolute path for reliability
+- Adjust the path to match your installation directory
+- Double backslashes required in JSON on Windows
 
 ---
 
@@ -145,15 +155,23 @@ Add to your Claude Desktop config file:
 
 ---
 
-### 2. update_memory_section
+### 2. update_memory_sections
 
 **Input**:
 ```json
 {
   "external_id": "agent-123",
   "memory_id": 1,
-  "section_id": "current_task",
-  "new_content": "Updated content here"
+  "sections": [
+    {
+      "section_id": "current_task",
+      "new_content": "Updated current task content"
+    },
+    {
+      "section_id": "progress",
+      "new_content": "Updated progress information"
+    }
+  ]
 }
 ```
 
@@ -161,17 +179,28 @@ Add to your Claude Desktop config file:
 ```json
 {
   "memory": { ... },
-  "section_id": "current_task",
-  "previous_update_count": 3,
-  "new_update_count": 4,
-  "message": "Section 'current_task' updated successfully (3 -> 4 updates)"
+  "updates": [
+    {
+      "section_id": "current_task",
+      "previous_count": 3,
+      "new_count": 4
+    },
+    {
+      "section_id": "progress",
+      "previous_count": 1,
+      "new_count": 2
+    }
+  ],
+  "total_sections_updated": 2,
+  "message": "Successfully updated 2 sections"
 }
 ```
 
 **Features**:
 - ✅ Validates memory exists
-- ✅ Validates section exists
-- ✅ Tracks update count changes
+- ✅ Validates all sections exist
+- ✅ Batch updates multiple sections atomically
+- ✅ Tracks update count changes for each section
 - ✅ Auto-triggers consolidation at threshold
 
 ---
@@ -285,16 +314,18 @@ This verifies:
 2. Set environment variables
 3. Add sample data:
    ```powershell
-   py agent_mem_mcp/tests/add_sample_data.py
+   uv run agent_mem_mcp/tests/add_sample_data.py
    ```
 4. Run server:
    ```powershell
-   py agent_mem_mcp/run.py
+   uv run agent_mem_mcp/run.py
    ```
 5. Test with client:
    ```powershell
-   py agent_mem_mcp/tests/test_mcp_client.py
+   uv run agent_mem_mcp/tests/test_mcp_client.py
    ```
+
+**Server Logs**: Check `agent_mem_mcp/logs/` for detailed logs of server activity.
 
 ### Test with MCP Inspector
 

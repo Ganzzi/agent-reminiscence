@@ -28,7 +28,7 @@ All core components have been successfully implemented:
 
 3. **Three Tools Implemented**
    - ✅ **get_active_memories**: Get all active memories for an agent
-   - ✅ **update_memory_section**: Update a specific section with validation
+   - ✅ **update_memory_sections**: Batch update multiple sections with validation
    - ✅ **search_memories**: Search across memory tiers with full results
 
 4. **JSON Schemas** (`agent_mem_mcp/schemas.py`)
@@ -162,17 +162,25 @@ py -m agent_mem_mcp --help
 
 ---
 
-### 2. update_memory_section
+### 2. update_memory_sections
 
-**Description**: Update a specific section in an active memory.
+**Description**: Batch update multiple sections in an active memory.
 
 **Input Schema**:
 ```json
 {
   "external_id": "agent-123",
   "memory_id": 1,
-  "section_id": "current_task",
-  "new_content": "Updated task description"
+  "sections": [
+    {
+      "section_id": "current_task",
+      "new_content": "Updated task description"
+    },
+    {
+      "section_id": "progress",
+      "new_content": "Made significant progress"
+    }
+  ]
 }
 ```
 
@@ -275,7 +283,7 @@ Low-Level Server (mcp.server.lowlevel.Server)
     │   └── Close AgentMem on shutdown
     ├── Tool Registration (@server.list_tools)
     │   ├── get_active_memories
-    │   ├── update_memory_section
+    │   ├── update_memory_sections
     │   └── search_memories
     └── Tool Execution (@server.call_tool)
         ├── Route to handler
@@ -313,14 +321,15 @@ Low-Level Server (mcp.server.lowlevel.Server)
 
 - [ ] **Test 1**: get_active_memories with valid external_id
 - [ ] **Test 2**: get_active_memories with agent that has no memories
-- [ ] **Test 3**: update_memory_section with valid inputs
-- [ ] **Test 4**: update_memory_section with invalid memory_id (error)
-- [ ] **Test 5**: update_memory_section with invalid section_id (error)
-- [ ] **Test 6**: search_memories with various queries
-- [ ] **Test 7**: search_memories with shortterm-only
-- [ ] **Test 8**: search_memories with longterm-only
-- [ ] **Test 9**: Verify lifespan initialization works
-- [ ] **Test 10**: Verify error responses are user-friendly
+- [ ] **Test 3**: update_memory_sections with valid inputs (single section)
+- [ ] **Test 4**: update_memory_sections with valid inputs (multiple sections)
+- [ ] **Test 5**: update_memory_sections with invalid memory_id (error)
+- [ ] **Test 6**: update_memory_sections with invalid section_id (error)
+- [ ] **Test 7**: search_memories with various queries
+- [ ] **Test 8**: search_memories with shortterm-only
+- [ ] **Test 9**: search_memories with longterm-only
+- [ ] **Test 10**: Verify lifespan initialization works
+- [ ] **Test 11**: Verify error responses are user-friendly
 
 ### Prerequisites for Testing
 

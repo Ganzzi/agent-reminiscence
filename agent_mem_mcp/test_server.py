@@ -26,7 +26,7 @@ async def handle_list_tools() -> list[types.Tool]:
     """List available memory management tools."""
     from schemas import (
         GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
-        UPDATE_MEMORY_SECTION_INPUT_SCHEMA,
+        UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
         SEARCH_MEMORIES_INPUT_SCHEMA,
     )
 
@@ -37,9 +37,9 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema=GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
         ),
         types.Tool(
-            name="update_memory_section",
-            description="Update a specific section in an active memory",
-            inputSchema=UPDATE_MEMORY_SECTION_INPUT_SCHEMA,
+            name="update_memory_sections",
+            description="Batch update multiple sections in an active memory",
+            inputSchema=UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
         ),
         types.Tool(
             name="search_memories",

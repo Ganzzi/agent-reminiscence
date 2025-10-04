@@ -141,7 +141,7 @@ All modules import correctly:
     "agent-mem": {
       "command": "py",
       "args": [
-        "C:\\Users\\Administrator\\Desktop\\ai-army\\libs\\agent_mem\\agent_mem_mcp\\run.py"
+        "path_to_agent_mem_mcp\\run.py"
       ],
       "env": {
         "POSTGRES_HOST": "localhost",

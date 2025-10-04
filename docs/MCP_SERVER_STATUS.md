@@ -47,9 +47,9 @@
    - Returns: All active memories with sections
    - Status: ✅ Tested successfully
 
-2. **`update_memory_section`**
-   - Input: `{"external_id": "agent-id", "memory_id": 3, "section_id": "current_task", "new_content": "..."}`
-   - Returns: Updated memory with update count tracking
+2. **`update_memory_sections`** (Batch Update)
+   - Input: `{"external_id": "agent-id", "memory_id": 3, "sections": [{"section_id": "task", "new_content": "..."}]}`
+   - Returns: Updated memory with update count tracking for each section
    - Status: ✅ Tested successfully
 
 3. **`search_memories`**

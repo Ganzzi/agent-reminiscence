@@ -14,8 +14,8 @@ GET_ACTIVE_MEMORIES_INPUT_SCHEMA: dict[str, Any] = {
     "required": ["external_id"],
 }
 
-# Tool 2: update_memory_section
-UPDATE_MEMORY_SECTION_INPUT_SCHEMA: dict[str, Any] = {
+# Tool 2: update_memory_sections (batch update)
+UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "external_id": {
@@ -26,16 +26,27 @@ UPDATE_MEMORY_SECTION_INPUT_SCHEMA: dict[str, Any] = {
             "type": "integer",
             "description": "ID of the memory to update",
         },
-        "section_id": {
-            "type": "string",
-            "description": "ID of the section to update (from template)",
-        },
-        "new_content": {
-            "type": "string",
-            "description": "New content for the section",
+        "sections": {
+            "type": "array",
+            "description": "Array of section updates to apply",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "section_id": {
+                        "type": "string",
+                        "description": "ID of the section to update",
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "New content for the section",
+                    },
+                },
+                "required": ["section_id", "new_content"],
+            },
+            "minItems": 1,
         },
     },
-    "required": ["external_id", "memory_id", "section_id", "new_content"],
+    "required": ["external_id", "memory_id", "sections"],
 }
 
 # Tool 3: search_memories

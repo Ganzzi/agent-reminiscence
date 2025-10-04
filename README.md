@@ -65,20 +65,23 @@ See [docs/STREAMLIT_UI_USER_GUIDE.md](docs/STREAMLIT_UI_USER_GUIDE.md) for compl
 ### Features
 
 - 🔍 **get_active_memories** - Retrieve all active memories for an agent
-- ✏️ **update_memory_section** - Update specific memory sections
+- 📝 **update_memory_sections** - Batch update multiple sections at once
 - 🔎 **search_memories** - Search across memory tiers with AI-synthesized responses
 
 ### Quick Start
 
 ```powershell
-# Run the MCP server
+# Run the MCP server (recommended: using uv)
+uv run agent_mem_mcp\run.py
+
+# Alternative: using Python directly
 py agent_mem_mcp\run.py
 
 # Add sample data for testing
-py agent_mem_mcp\tests\add_sample_data.py
+uv run agent_mem_mcp\tests\add_sample_data.py
 
 # Test with Python client
-py agent_mem_mcp\tests\test_mcp_client.py
+uv run agent_mem_mcp\tests\test_mcp_client.py
 ```
 
 ### Claude Desktop Integration
@@ -89,9 +92,10 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 {
   "mcpServers": {
     "agent-mem": {
-      "command": "py",
+      "command": "uv",
       "args": [
-        "C:\\Users\\Administrator\\Desktop\\ai-army\\libs\\agent_mem\\agent_mem_mcp\\run.py"
+        "run",
+        "path_to_agent_mem_mcp\\run.py"
       ],
       "env": {
         "POSTGRES_HOST": "localhost",
@@ -109,7 +113,11 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 }
 ```
 
-**Important**: Use absolute path (adjust to your installation directory) and ensure environment variables match your `.env` file.
+**Important**: 
+- Use `uv` command for better dependency management
+- Use absolute path (adjust to your installation directory)
+- Ensure environment variables match your `.env` file
+- Double backslashes required in JSON on Windows
 
 ### Documentation
 

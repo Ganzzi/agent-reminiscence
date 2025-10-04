@@ -1,7 +1,10 @@
 """MCP Server for AgentMem - Exposes memory management tools using low-level Server API."""
 
+import json
 import sys
+import logging
 from pathlib import Path
+from datetime import datetime
 
 # Add agent_mem to Python path
 root_dir = Path(__file__).parent.parent
@@ -10,16 +13,22 @@ sys.path.insert(0, str(root_dir))
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
-
-import mcp.types as types
+from mcp import types
 from mcp.server.lowlevel import Server
 
 from agent_mem import AgentMem
 from .schemas import (
     GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
-    UPDATE_MEMORY_SECTION_INPUT_SCHEMA,
+    UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
     SEARCH_MEMORIES_INPUT_SCHEMA,
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
+logger = logging.getLogger("agent_mem_mcp")
 
 
 @asynccontextmanager
@@ -30,19 +39,32 @@ async def server_lifespan(_server: Server) -> AsyncIterator[dict[str, Any]]:
     This creates a singleton AgentMem instance that's shared across
     all tool calls, maintaining database connections efficiently.
     """
+    logger.info("Starting AgentMem MCP server...")
+
     # Startup: Initialize AgentMem with configuration
     from agent_mem.config import get_config
 
-    config = get_config()
-
-    agent_mem = AgentMem(config=config)
-    await agent_mem.initialize()
-
     try:
+        config = get_config()
+        logger.info("Configuration loaded successfully")
+        logger.debug(f"PostgreSQL: {config.postgres_host}:{config.postgres_port}")
+        logger.debug(f"Neo4j: {config.neo4j_uri}")
+        logger.debug(f"Ollama: {config.ollama_base_url}")
+
+        agent_mem = AgentMem(config=config)
+        logger.info("Initializing AgentMem instance...")
+        await agent_mem.initialize()
+        logger.info("AgentMem initialized successfully")
+        logger.info("MCP server ready to accept requests")
+
         yield {"agent_mem": agent_mem}
+    except Exception as e:
+        logger.error(f"Failed to initialize AgentMem: {e}", exc_info=True)
+        raise
     finally:
-        # Shutdown: Close AgentMem connections
-        await agent_mem.close()
+        # Cleanup: Close database connections
+        logger.info("Shutting down MCP server...")
+        pass
 
 
 # Create MCP server with lifespan management
@@ -64,14 +86,14 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema=GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
         ),
         types.Tool(
-            name="update_memory_section",
+            name="update_memory_sections",
             description=(
-                "Update a specific section in an active memory. "
-                "This updates the content of a single section within an active memory. "
-                "The section's update_count is automatically incremented, and when it "
-                "reaches a threshold, the memory is automatically consolidated to shortterm memory."
+                "Update multiple sections in an active memory at once (batch update). "
+                "This efficiently updates multiple sections in a single call, with all sections "
+                "having their update_counts incremented atomically. More efficient than multiple "
+                "single-section updates when you need to update several sections together."
             ),
-            inputSchema=UPDATE_MEMORY_SECTION_INPUT_SCHEMA,
+            inputSchema=UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
         ),
         types.Tool(
             name="search_memories",
@@ -92,6 +114,8 @@ async def handle_call_tool(
     name: str, arguments: dict[str, Any]
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Handle tool calls by routing to appropriate handler."""
+    logger.info(f"Received tool call: {name}")
+    logger.debug(f"Arguments: {arguments}")
 
     # Access AgentMem from lifespan context
     ctx = server.request_context
@@ -99,14 +123,22 @@ async def handle_call_tool(
 
     try:
         if name == "get_active_memories":
-            return await _handle_get_active_memories(agent_mem, arguments)
-        elif name == "update_memory_section":
-            return await _handle_update_memory_section(agent_mem, arguments)
+            result = await _handle_get_active_memories(agent_mem, arguments)
+            logger.info(f"Successfully executed {name}")
+            return result
+        elif name == "update_memory_sections":
+            result = await _handle_update_memory_sections(agent_mem, arguments)
+            logger.info(f"Successfully executed {name}")
+            return result
         elif name == "search_memories":
-            return await _handle_search_memories(agent_mem, arguments)
+            result = await _handle_search_memories(agent_mem, arguments)
+            logger.info(f"Successfully executed {name}")
+            return result
         else:
+            logger.error(f"Unknown tool requested: {name}")
             raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
+        logger.error(f"Error executing {name}: {e}", exc_info=True)
         # Return error as text content
         return [
             types.TextContent(
@@ -155,48 +187,71 @@ async def _handle_get_active_memories(
     return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
 
 
-async def _handle_update_memory_section(
+async def _handle_update_memory_sections(
     agent_mem: AgentMem, arguments: dict[str, Any]
 ) -> list[types.TextContent]:
-    """Handle update_memory_section tool call."""
+    """Handle update_memory_sections tool call (batch update)."""
     external_id = arguments["external_id"]
     memory_id = arguments["memory_id"]
-    section_id = arguments["section_id"]
-    new_content = arguments["new_content"]
+    sections = arguments["sections"]
 
     # Validate inputs
     if not external_id or not external_id.strip():
         raise ValueError("external_id cannot be empty")
-    if not section_id or not section_id.strip():
-        raise ValueError("section_id cannot be empty")
-    if not new_content or not new_content.strip():
-        raise ValueError("new_content cannot be empty")
 
-    # Get current memory to track update count
+    if not sections or len(sections) == 0:
+        raise ValueError("sections array cannot be empty")
+
+    # Get current memory to track update counts
     current_memories = await agent_mem.get_active_memories(external_id=external_id)
     current_memory = next((m for m in current_memories if m.id == memory_id), None)
 
     if not current_memory:
         raise ValueError(f"Memory {memory_id} not found for agent {external_id}")
 
-    if section_id not in current_memory.sections:
-        available_sections = ", ".join(current_memory.sections.keys())
-        raise ValueError(
-            f"Section '{section_id}' not found in memory. "
-            f"Available sections: {available_sections}"
+    # Validate all sections exist
+    for section_update in sections:
+        section_id = section_update["section_id"]
+        if section_id not in current_memory.sections:
+            available_sections = ", ".join(current_memory.sections.keys())
+            raise ValueError(
+                f"Section '{section_id}' not found in memory. "
+                f"Available sections: {available_sections}"
+            )
+
+    # Track previous counts
+    previous_counts = {}
+    for section_update in sections:
+        section_id = section_update["section_id"]
+        previous_counts[section_id] = current_memory.sections[section_id].get("update_count", 0)
+
+    # Update all sections
+    updated_memory = current_memory
+    section_updates = []
+
+    for section_update in sections:
+        section_id = section_update["section_id"]
+        new_content = section_update["new_content"]
+
+        # Validate content
+        if not new_content or not new_content.strip():
+            raise ValueError(f"new_content for section '{section_id}' cannot be empty")
+
+        updated_memory = await agent_mem.update_active_memory_section(
+            external_id=external_id,
+            memory_id=memory_id,
+            section_id=section_id,
+            new_content=new_content,
         )
 
-    previous_count = current_memory.sections[section_id].get("update_count", 0)
-
-    # Update the section
-    updated_memory = await agent_mem.update_active_memory_section(
-        external_id=external_id,
-        memory_id=memory_id,
-        section_id=section_id,
-        new_content=new_content,
-    )
-
-    new_count = updated_memory.sections[section_id].get("update_count", 0)
+        new_count = updated_memory.sections[section_id].get("update_count", 0)
+        section_updates.append(
+            {
+                "section_id": section_id,
+                "previous_count": previous_counts[section_id],
+                "new_count": new_count,
+            }
+        )
 
     # Format response
     response = {
@@ -207,10 +262,9 @@ async def _handle_update_memory_section(
             "sections": updated_memory.sections,
             "updated_at": updated_memory.updated_at.isoformat(),
         },
-        "section_id": section_id,
-        "previous_update_count": previous_count,
-        "new_update_count": new_count,
-        "message": f"Section '{section_id}' updated successfully ({previous_count} -> {new_count} updates)",
+        "updates": section_updates,
+        "total_sections_updated": len(section_updates),
+        "message": f"Successfully updated {len(section_updates)} sections",
     }
 
     import json
