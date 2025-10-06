@@ -229,6 +229,123 @@ class ActiveMemoryRepository:
             )
             return memory
 
+    async def update_sections(
+        self,
+        memory_id: int,
+        section_updates: List[Dict[str, str]],
+    ) -> Optional[ActiveMemory]:
+        """
+        Update multiple sections in an active memory (batch update).
+
+        All updates are done in a single transaction.
+        Automatically increments update_count for each section.
+
+        Args:
+            memory_id: Memory ID
+            section_updates: List of dicts with 'section_id' and 'new_content'
+                           Example: [{"section_id": "progress", "new_content": "..."}]
+
+        Returns:
+            Updated ActiveMemory object or None if not found
+
+        Raises:
+            ValueError: If any section_id not found in memory
+
+        Example:
+            updated = await repo.update_sections(
+                memory_id=1,
+                section_updates=[
+                    {"section_id": "progress", "new_content": "Step 1 done"},
+                    {"section_id": "notes", "new_content": "New insights"}
+                ]
+            )
+        """
+        # First get current state
+        current = await self.get_by_id(memory_id)
+        if not current:
+            logger.warning(f"Active memory {memory_id} not found")
+            return None
+
+        # Validate all sections exist
+        for update in section_updates:
+            section_id = update.get("section_id")
+            if not section_id:
+                raise ValueError("Each section update must have 'section_id'")
+            if section_id not in current.sections:
+                raise ValueError(
+                    f"Section '{section_id}' not found in memory {memory_id}. "
+                    f"Available sections: {list(current.sections.keys())}"
+                )
+
+        # Update all sections
+        updated_sections = current.sections.copy()
+        for update in section_updates:
+            section_id = update["section_id"]
+            new_content = update.get("new_content", "")
+
+            updated_sections[section_id] = {
+                "content": new_content,
+                "update_count": current.sections[section_id].get("update_count", 0) + 1,
+            }
+
+        # Single database update with all changes
+        query = """
+            UPDATE active_memory
+            SET sections = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING id, external_id, title, template_content, sections, 
+                      metadata, created_at, updated_at
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [updated_sections, memory_id])
+            rows = result.result()
+
+            if not rows:
+                logger.warning(f"Active memory {memory_id} not found for batch update")
+                return None
+
+            memory = self._row_to_model(rows[0])
+            logger.info(f"Batch updated {len(section_updates)} sections in memory {memory_id}")
+            return memory
+
+    async def reset_all_update_counts(self, memory_id: int) -> bool:
+        """
+        Reset update_count to 0 for all sections in a memory.
+
+        Called after successful consolidation to shortterm memory.
+
+        Args:
+            memory_id: Memory ID
+
+        Returns:
+            True if successful, False if memory not found
+        """
+        # Get current state
+        current = await self.get_by_id(memory_id)
+        if not current:
+            logger.warning(f"Active memory {memory_id} not found")
+            return False
+
+        # Reset all update counts
+        reset_sections = {}
+        for section_id, section_data in current.sections.items():
+            reset_sections[section_id] = {
+                "content": section_data.get("content", ""),
+                "update_count": 0,
+            }
+
+        query = """
+            UPDATE active_memory
+            SET sections = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+        """
+
+        async with self.postgres.connection() as conn:
+            await conn.execute(query, [reset_sections, memory_id])
+            logger.info(f"Reset all section update counts for memory {memory_id}")
+            return True
+
     async def update_metadata(
         self,
         memory_id: int,

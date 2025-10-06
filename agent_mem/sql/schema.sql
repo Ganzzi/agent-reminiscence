@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS shortterm_memory (
     title VARCHAR(500) NOT NULL,
     summary TEXT,
     metadata JSONB DEFAULT '{}',
+    update_count INTEGER DEFAULT 0, -- Track number of updates for promotion threshold
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS shortterm_memory_chunk (
     content TEXT NOT NULL,
     embedding vector (768), -- Vector dimension configurable (default 768 for nomic-embed-text)
     content_bm25 bm25vector, -- Auto-populated by trigger
+    section_id TEXT, -- References active memory section (nullable, for tracking source)
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -103,6 +105,12 @@ CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_bm25 ON shortterm_memory_chunk US
 -- JSONB index for metadata
 CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_metadata ON shortterm_memory_chunk USING gin (metadata);
 
+-- Index for section_id lookups
+CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_section ON shortterm_memory_chunk (
+    shortterm_memory_id,
+    section_id
+);
+
 -- ============================================================================
 -- LONGTERM MEMORY CHUNKS (Consolidated Knowledge with Temporal Tracking)
 -- ============================================================================
@@ -121,6 +129,7 @@ CREATE TABLE IF NOT EXISTS longterm_memory_chunk (
     metadata JSONB DEFAULT '{}',
     start_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- When information became valid
     end_date TIMESTAMP, -- NULL means still valid, set to mark as superseded
+    last_updated TIMESTAMP, -- Track when chunk was last updated from shortterm
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -158,6 +167,9 @@ CREATE INDEX IF NOT EXISTS idx_longterm_chunk_bm25 ON longterm_memory_chunk USIN
 
 -- JSONB index for metadata
 CREATE INDEX IF NOT EXISTS idx_longterm_chunk_metadata ON longterm_memory_chunk USING gin (metadata);
+
+-- Index for last_updated queries
+CREATE INDEX IF NOT EXISTS idx_longterm_chunk_updated ON longterm_memory_chunk (last_updated);
 
 -- ============================================================================
 -- TRIGGERS

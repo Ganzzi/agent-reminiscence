@@ -97,27 +97,35 @@ async def main():
 
     # Update a section
     logger.info("5. Updating 'status' section...")
-    updated = await memory.update_active_memory_section(
+    updated = await memory.update_active_memory_sections(
         external_id=agent_id,
         memory_id=memory1.id,
-        section_id="status",
-        new_content="# Preferences\n- Strongly prefers Python and FastAPI\n"
-        "- Working on AI agent project\n"
-        "- Interested in memory management",
+        sections=[
+            {
+                "section_id": "status",
+                "new_content": "# Preferences\n- Strongly prefers Python and FastAPI\n"
+                "- Working on AI agent project\n"
+                "- Interested in memory management",
+            }
+        ],
     )
     logger.info(f"   ✓ Updated section 'status'")
     logger.info(f"   ✓ Update count: {updated.sections['status']['update_count']}\n")
 
     # Update again to see counter increment
     logger.info("6. Updating section again...")
-    updated = await memory.update_active_memory_section(
+    updated = await memory.update_active_memory_sections(
         external_id=agent_id,
         memory_id=memory1.id,
-        section_id="status",
-        new_content="# Preferences\n- Strongly prefers Python and FastAPI\n"
-        "- Working on AI agent project\n"
-        "- Interested in memory management\n"
-        "- Uses Docker for services",
+        sections=[
+            {
+                "section_id": "status",
+                "new_content": "# Preferences\n- Strongly prefers Python and FastAPI\n"
+                "- Working on AI agent project\n"
+                "- Interested in memory management\n"
+                "- Uses Docker for services",
+            }
+        ],
     )
     logger.info(f"   ✓ Update count incremented: {updated.sections['status']['update_count']}\n")
 

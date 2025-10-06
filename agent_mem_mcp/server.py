@@ -209,9 +209,11 @@ async def _handle_update_memory_sections(
     if not current_memory:
         raise ValueError(f"Memory {memory_id} not found for agent {external_id}")
 
-    # Validate all sections exist
+    # Validate all sections exist and content is not empty
     for section_update in sections:
         section_id = section_update["section_id"]
+        new_content = section_update["new_content"]
+
         if section_id not in current_memory.sections:
             available_sections = ", ".join(current_memory.sections.keys())
             raise ValueError(
@@ -219,31 +221,26 @@ async def _handle_update_memory_sections(
                 f"Available sections: {available_sections}"
             )
 
-    # Track previous counts
+        if not new_content or not new_content.strip():
+            raise ValueError(f"new_content for section '{section_id}' cannot be empty")
+
+    # Track previous counts for response
     previous_counts = {}
     for section_update in sections:
         section_id = section_update["section_id"]
         previous_counts[section_id] = current_memory.sections[section_id].get("update_count", 0)
 
-    # Update all sections
-    updated_memory = current_memory
-    section_updates = []
+    # Use NEW batch update method (single call)
+    updated_memory = await agent_mem.update_active_memory_sections(
+        external_id=external_id,
+        memory_id=memory_id,
+        sections=sections,  # Pass entire sections list
+    )
 
+    # Build section updates info
+    section_updates = []
     for section_update in sections:
         section_id = section_update["section_id"]
-        new_content = section_update["new_content"]
-
-        # Validate content
-        if not new_content or not new_content.strip():
-            raise ValueError(f"new_content for section '{section_id}' cannot be empty")
-
-        updated_memory = await agent_mem.update_active_memory_section(
-            external_id=external_id,
-            memory_id=memory_id,
-            section_id=section_id,
-            new_content=new_content,
-        )
-
         new_count = updated_memory.sections[section_id].get("update_count", 0)
         section_updates.append(
             {
@@ -252,6 +249,18 @@ async def _handle_update_memory_sections(
                 "new_count": new_count,
             }
         )
+
+    # Calculate total update count for consolidation info
+    total_update_count = sum(
+        section.get("update_count", 0) for section in updated_memory.sections.values()
+    )
+    num_sections = len(updated_memory.sections)
+
+    # Get config to show threshold info (import here to avoid circular imports)
+    from agent_mem.config import get_config
+
+    config = get_config()
+    threshold = config.avg_section_update_count_for_consolidation * num_sections
 
     # Format response
     response = {
@@ -264,7 +273,12 @@ async def _handle_update_memory_sections(
         },
         "updates": section_updates,
         "total_sections_updated": len(section_updates),
-        "message": f"Successfully updated {len(section_updates)} sections",
+        "consolidation_info": {
+            "total_update_count": total_update_count,
+            "threshold": threshold,
+            "will_consolidate": total_update_count >= threshold,
+        },
+        "message": f"Successfully updated {len(section_updates)} sections in single batch operation",
     }
 
     import json

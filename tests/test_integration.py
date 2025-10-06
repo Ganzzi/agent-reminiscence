@@ -89,10 +89,10 @@ class TestEndToEndWorkflow:
 
                 # 2. Update multiple times
                 for i in range(5):
-                    mem = await agent_mem.update_active_memory_section(
+                    mem = await agent_mem.update_active_memory_sections(
+                        external_id="test-agent-001",
                         memory_id=mem.id,
-                        section_id="summary",
-                        new_content=f"Update {i+1}",
+                        sections=[{"section_id": "summary", "new_content": f"Update {i+1}"}],
                     )
 
                 # After 5 updates, sections should have been updated

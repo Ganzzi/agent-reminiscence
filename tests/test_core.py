@@ -167,18 +167,17 @@ class TestAgentMemActiveMemory:
             )
 
             mock_mm_instance = MagicMock()
-            mock_mm_instance.update_active_memory_section = AsyncMock(return_value=updated_memory)
+            mock_mm_instance.update_active_memory_sections = AsyncMock(return_value=updated_memory)
             mock_mm.return_value = mock_mm_instance
 
             agent_mem = AgentMem(config=test_config)
             agent_mem._initialized = True  # Bypass initialization check
             agent_mem._memory_manager = mock_mm_instance  # Set mock manager
 
-            result = await agent_mem.update_active_memory_section(
+            result = await agent_mem.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                section_id="summary",
-                new_content="Updated",
+                sections=[{"section_id": "summary", "new_content": "Updated"}],
             )
 
             assert result == updated_memory
@@ -287,4 +286,3 @@ class TestAgentMemErrorHandling:
 
             # Should not raise error
             assert True
-

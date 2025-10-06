@@ -120,12 +120,16 @@ async def main():
 
         # 4. Update a specific section
         logger.info("4. Updating 'progress' section...")
-        updated = await agent_mem.update_active_memory_section(
+        updated = await agent_mem.update_active_memory_sections(
             external_id=agent1_id,
             memory_id=memory1.id,
-            section_id="progress",
-            new_content="# Progress\n- Designed UI mockups\n- Set up React project\n"
-            "- Implemented chart components\n- Connected to WebSocket API",
+            sections=[
+                {
+                    "section_id": "progress",
+                    "new_content": "# Progress\n- Designed UI mockups\n- Set up React project\n"
+                    "- Implemented chart components\n- Connected to WebSocket API",
+                }
+            ],
         )
         logger.info(
             f"✓ Updated section 'progress', update_count: {updated.sections['progress']['update_count']}\n"
@@ -134,11 +138,15 @@ async def main():
         # 5. Update multiple times to see counter increment
         logger.info("5. Updating 'progress' section multiple times...")
         for i in range(3):
-            updated = await agent_mem.update_active_memory_section(
+            updated = await agent_mem.update_active_memory_sections(
                 external_id=agent1_id,
                 memory_id=memory1.id,
-                section_id="progress",
-                new_content=f"# Progress\nUpdate iteration {i+2}: More progress...",
+                sections=[
+                    {
+                        "section_id": "progress",
+                        "new_content": f"# Progress\nUpdate iteration {i+2}: More progress...",
+                    }
+                ],
             )
             logger.info(
                 f"   - Update {i+1}: update_count = {updated.sections['progress']['update_count']}"
@@ -147,11 +155,15 @@ async def main():
 
         # 6. Update a different section
         logger.info("6. Updating 'blockers' section...")
-        updated = await agent_mem.update_active_memory_section(
+        updated = await agent_mem.update_active_memory_sections(
             external_id=agent1_id,
             memory_id=memory1.id,
-            section_id="blockers",
-            new_content="# Blockers\n- Need dark mode design assets\n- Waiting for PDF export library approval",
+            sections=[
+                {
+                    "section_id": "blockers",
+                    "new_content": "# Blockers\n- Need dark mode design assets\n- Waiting for PDF export library approval",
+                }
+            ],
         )
         logger.info(
             f"✓ Updated section 'blockers', update_count: {updated.sections['blockers']['update_count']}\n"

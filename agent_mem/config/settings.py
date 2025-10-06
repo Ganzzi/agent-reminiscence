@@ -34,17 +34,20 @@ class Config(BaseModel):
     vector_dimension: int = Field(default_factory=lambda: int(os.getenv("VECTOR_DIMENSION", "768")))
 
     # Agent Model Configuration
+    er_extractor_agent_model: str = Field(
+        default_factory=lambda: os.getenv("ER_EXTRACTOR_AGENT_MODEL", "google:gemini-2.0-flash-exp")
+    )
     memory_update_agent_model: str = Field(
         default_factory=lambda: os.getenv(
-            "MEMORY_UPDATE_AGENT_MODEL", "google-gla:gemini-2.0-flash"
+            "MEMORY_UPDATE_AGENT_MODEL", "google:gemini-2.0-flash-exp"
         )
     )
     memorizer_agent_model: str = Field(
-        default_factory=lambda: os.getenv("MEMORIZER_AGENT_MODEL", "google-gla:gemini-2.0-flash")
+        default_factory=lambda: os.getenv("MEMORIZER_AGENT_MODEL", "google:gemini-2.0-flash-exp")
     )
     memory_retrieve_agent_model: str = Field(
         default_factory=lambda: os.getenv(
-            "MEMORY_RETRIEVE_AGENT_MODEL", "google-gla:gemini-2.0-flash"
+            "MEMORY_RETRIEVE_AGENT_MODEL", "google:gemini-2.0-flash-exp"
         )
     )
 
@@ -56,6 +59,14 @@ class Config(BaseModel):
     consolidation_threshold: int = Field(
         default_factory=lambda: int(os.getenv("ACTIVE_MEMORY_UPDATE_THRESHOLD", "5")),
         description="Number of updates before consolidation",
+    )
+    avg_section_update_count_for_consolidation: float = Field(
+        default_factory=lambda: float(os.getenv("AVG_SECTION_UPDATE_COUNT", "5.0")),
+        description="Average update count per section before consolidation trigger",
+    )
+    shortterm_update_count_threshold: int = Field(
+        default_factory=lambda: int(os.getenv("SHORTTERM_UPDATE_THRESHOLD", "10")),
+        description="Number of shortterm memory updates before longterm promotion",
     )
     promotion_importance_threshold: float = Field(
         default_factory=lambda: float(os.getenv("SHORTTERM_PROMOTION_THRESHOLD", "0.7")),
@@ -90,6 +101,24 @@ class Config(BaseModel):
     vector_weight: float = Field(
         default_factory=lambda: float(os.getenv("VECTOR_WEIGHT", "0.7")),
         description="Weight for vector in hybrid search",
+    )
+
+    # LLM API Keys Configuration
+    openai_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY"),
+        description="OpenAI API key for GPT models",
+    )
+    anthropic_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"),
+        description="Anthropic API key for Claude models",
+    )
+    google_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GOOGLE_API_KEY"),
+        description="Google API key for Gemini models",
+    )
+    grok_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GROK_API_KEY"),
+        description="Grok API key",
     )
 
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")

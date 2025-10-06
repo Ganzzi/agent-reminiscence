@@ -69,11 +69,10 @@ async def test_batch_update():
                 f"{current_content}\n\n**Batch Update Test:** Section updated via batch operation"
             )
 
-            updated_memory = await agent_mem.update_active_memory_section(
+            updated_memory = await agent_mem.update_active_memory_sections(
                 external_id=external_id,
                 memory_id=memory_id,
-                section_id=section_id,
-                new_content=new_content,
+                sections=[{"section_id": section_id, "new_content": new_content}],
             )
 
             new_count = updated_memory.sections[section_id].get("update_count", 0)

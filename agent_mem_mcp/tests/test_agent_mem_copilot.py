@@ -111,11 +111,10 @@ async def test_mcp_server():
         # Update with new content
         new_content = f"{current_content}\n\n**Update:** Testing MCP server with agent-mem-copilot - {current_count + 1} update(s)"
 
-        updated_memory = await agent_mem.update_active_memory_section(
+        updated_memory = await agent_mem.update_active_memory_sections(
             external_id=external_id,
             memory_id=memory_id,
-            section_id=section_to_update,
-            new_content=new_content,
+            sections=[{"section_id": section_to_update, "new_content": new_content}],
         )
 
         new_count = updated_memory.sections[section_to_update].get("update_count", 0)
@@ -132,11 +131,10 @@ async def test_mcp_server():
 
             new_content_2 = f"{current_content_2}\n\n**Update:** Second section test - {current_count_2 + 1} update(s)"
 
-            updated_memory = await agent_mem.update_active_memory_section(
+            updated_memory = await agent_mem.update_active_memory_sections(
                 external_id=external_id,
                 memory_id=memory_id,
-                section_id=section_to_update_2,
-                new_content=new_content_2,
+                sections=[{"section_id": section_to_update_2, "new_content": new_content_2}],
             )
 
             new_count = updated_memory.sections[section_to_update_2].get("update_count", 0)

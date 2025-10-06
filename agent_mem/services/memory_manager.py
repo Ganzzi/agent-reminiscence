@@ -6,6 +6,7 @@ Coordinates consolidation, promotion, and retrieval across memory tiers.
 """
 
 import logging
+import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
@@ -67,6 +68,9 @@ class MemoryManager:
         # Repositories (initialized after database connection)
         self.active_repo: Optional[ActiveMemoryRepository] = None
         self.shortterm_repo: Optional[ShorttermMemoryRepository] = None
+
+        # Consolidation locks to prevent concurrent consolidation
+        self._consolidation_locks: Dict[int, asyncio.Lock] = {}
         self.longterm_repo: Optional[LongtermMemoryRepository] = None
 
         self._initialized = False
@@ -172,56 +176,85 @@ class MemoryManager:
         logger.info(f"Retrieved {len(memories)} active memories for {external_id}")
         return memories
 
-    async def update_active_memory_section(
+    async def update_active_memory_sections(
         self,
         external_id: str,
         memory_id: int,
-        section_id: str,
-        new_content: str,
+        sections: List[Dict[str, str]],
     ) -> ActiveMemory:
         """
-        Update a specific section in an active memory.
+        Update multiple sections in an active memory (batch update).
+
+        After updating all sections, checks if total update count across all sections
+        exceeds threshold for consolidation. If threshold is met, triggers
+        consolidation in the background without blocking.
 
         Args:
             external_id: Agent identifier
             memory_id: Memory ID
-            section_id: Section ID to update
-            new_content: New content for the section
+            sections: List of section updates with section_id and new_content
+                     Example: [{"section_id": "progress", "new_content": "..."}]
 
         Returns:
             Updated ActiveMemory object
 
         Raises:
             ValueError: If memory not found or section invalid
+
+        Example:
+            >>> sections = [
+            ...     {"section_id": "progress", "new_content": "Updated progress..."},
+            ...     {"section_id": "notes", "new_content": "New notes..."}
+            ... ]
+            >>> memory = await manager.update_active_memory_sections(
+            ...     external_id="agent-123",
+            ...     memory_id=1,
+            ...     sections=sections
+            ... )
         """
         self._ensure_initialized()
 
-        logger.info(f"Updating section '{section_id}' in memory {memory_id} for {external_id}")
+        logger.info(f"Updating {len(sections)} sections in memory {memory_id} for {external_id}")
 
-        memory = await self.active_repo.update_section(
+        # Update all sections in repository (transactional)
+        memory = await self.active_repo.update_sections(
             memory_id=memory_id,
-            section_id=section_id,
-            new_content=new_content,
+            section_updates=sections,
         )
 
         if not memory:
             raise ValueError(f"Active memory {memory_id} not found")
 
-        logger.info(f"Updated section '{section_id}' in memory {memory_id}")
+        logger.info(f"Updated {len(sections)} sections in memory {memory_id}")
 
-        # Check consolidation threshold and trigger consolidation if needed
-        section = memory.sections.get(section_id)
-        if section and section["update_count"] >= self.config.consolidation_threshold:
+        # Calculate threshold based on total number of sections
+        num_sections = len(memory.sections)
+        threshold = self.config.avg_section_update_count_for_consolidation * num_sections
+
+        # Calculate total update count across all sections
+        total_update_count = sum(
+            section.get("update_count", 0) for section in memory.sections.values()
+        )
+
+        logger.debug(
+            f"Total update count: {total_update_count}, "
+            f"Threshold: {threshold} ({num_sections} sections * "
+            f"{self.config.avg_section_update_count_for_consolidation})"
+        )
+
+        # Check if consolidation threshold is met
+        if total_update_count >= threshold:
             logger.info(
-                f"Section '{section_id}' reached consolidation threshold "
-                f"({section['update_count']} >= {self.config.consolidation_threshold}). "
-                f"Triggering consolidation..."
+                f"Total update count ({total_update_count}) >= threshold ({threshold}). "
+                f"Triggering consolidation in background..."
             )
-            try:
-                await self._consolidate_to_shortterm(external_id, memory.id)
-            except Exception as e:
-                logger.error(f"Consolidation failed: {e}", exc_info=True)
-                # Don't fail the update if consolidation fails
+
+            # Start consolidation in background (non-blocking)
+            asyncio.create_task(self._consolidate_with_lock(external_id, memory.id))
+
+            # Reset active memory section update counts
+            await self.active_repo.reset_all_update_counts(memory.id)
+            logger.info(f"Reset section update counts for active memory {memory.id}")
 
         return memory
 
@@ -537,6 +570,48 @@ class MemoryManager:
     # =========================================================================
     # CONSOLIDATION WORKFLOWS
     # =========================================================================
+
+    async def _consolidate_with_lock(
+        self,
+        external_id: str,
+        memory_id: int,
+    ) -> None:
+        """
+        Consolidate with lock to prevent concurrent consolidation.
+
+        Ensures only one consolidation process runs for a given memory at a time.
+        If a consolidation is already in progress, logs a message and returns.
+
+        Args:
+            external_id: Agent identifier
+            memory_id: Memory ID to consolidate
+        """
+        # Get or create lock for this memory
+        if memory_id not in self._consolidation_locks:
+            self._consolidation_locks[memory_id] = asyncio.Lock()
+
+        lock = self._consolidation_locks[memory_id]
+
+        # Try to acquire lock (non-blocking)
+        if lock.locked():
+            logger.info(f"Consolidation already in progress for memory {memory_id}, skipping")
+            return
+
+        async with lock:
+            try:
+                logger.info(f"Starting consolidation for memory {memory_id}")
+                await self._consolidate_to_shortterm(external_id, memory_id)
+                logger.info(f"Consolidation completed for memory {memory_id}")
+            except Exception as e:
+                logger.error(
+                    f"Consolidation failed for memory {memory_id}: {e}",
+                    exc_info=True,
+                )
+            finally:
+                # Clean up lock if no longer needed
+                if memory_id in self._consolidation_locks:
+                    del self._consolidation_locks[memory_id]
+                    logger.debug(f"Removed consolidation lock for memory {memory_id}")
 
     async def _consolidate_to_shortterm(
         self, external_id: str, active_memory_id: int
