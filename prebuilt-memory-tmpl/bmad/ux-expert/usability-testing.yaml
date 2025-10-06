@@ -23,7 +23,7 @@ sections:
   - id: "usability_issues"
     title: "Usability Issues"
     description: "Problems encountered. Example: 'Issue 1 (P0): Settings not discoverable (4/5 couldn't find). Issue 2 (P1): Color meaning unclear (3/5 guessed). Issue 3 (P2): Keyboard shortcuts unknown. Issue 4 (P3): Mobile gestures unfamiliar.'"
-  - id:="positive_feedback"
+  - id: "positive_feedback"
     title: "Positive Feedback"
     description: "What users liked. Example: 'Liked: Saves time (5/5), Reduces stress (4/5), Smart suggestions (4/5), Easy to override (5/5), Clean design (5/5). Quotes: It just gets me, This is brilliant.'"
   - id: "recommendations"

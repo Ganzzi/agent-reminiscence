@@ -17,11 +17,10 @@ from agent_mem.agents.er_extractor import (
     RelationshipType,
 )
 from agent_mem.agents.memorizer import (
-    consolidate_memory,
-    ConsolidationPlan,
-    ChunkOperation,
-    EntityOperation,
-    RelationshipOperation,
+    resolve_conflicts,
+    format_conflicts_as_text,
+    MemorizerDeps,
+    ConflictResolution,
 )
 from agent_mem.agents.memory_updater import MemoryUpdateAgent
 from agent_mem.agents.memory_retriever import MemoryRetrieveAgent
@@ -35,11 +34,10 @@ __all__ = [
     "EntityType",
     "RelationshipType",
     # Memorizer Agent
-    "consolidate_memory",
-    "ConsolidationPlan",
-    "ChunkOperation",
-    "EntityOperation",
-    "RelationshipOperation",
+    "resolve_conflicts",
+    "format_conflicts_as_text",
+    "MemorizerDeps",
+    "ConflictResolution",
     # Other Agents
     "MemoryUpdateAgent",
     "MemoryRetrieveAgent",

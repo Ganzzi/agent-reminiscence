@@ -36,6 +36,7 @@ class ShorttermMemoryChunk(BaseModel):
     shortterm_memory_id: int
     content: str
     chunk_order: int
+    section_id: Optional[str] = None  # Reference to active memory section
     similarity_score: Optional[float] = None
     bm25_score: Optional[float] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -51,6 +52,7 @@ class ShorttermMemory(BaseModel):
     title: str
     summary: Optional[str] = None
     chunks: List[ShorttermMemoryChunk] = Field(default_factory=list)
+    update_count: int = 0  # Track number of consolidations
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     last_updated: datetime
@@ -69,6 +71,7 @@ class LongtermMemoryChunk(BaseModel):
     confidence_score: float
     start_date: datetime
     end_date: Optional[datetime] = None
+    last_updated: Optional[datetime] = None  # Track when chunk was last updated from shortterm
     similarity_score: Optional[float] = None
     bm25_score: Optional[float] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -93,7 +96,7 @@ class ShorttermEntity(BaseModel):
     external_id: str
     shortterm_memory_id: int
     name: str
-    type: str
+    types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     first_seen: datetime
@@ -113,7 +116,7 @@ class ShorttermRelationship(BaseModel):
     to_entity_id: int
     from_entity_name: Optional[str] = None
     to_entity_name: Optional[str] = None
-    type: str
+    types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     strength: float = Field(ge=0.0, le=1.0)
@@ -130,7 +133,7 @@ class LongtermEntity(BaseModel):
     id: int
     external_id: str
     name: str
-    type: str
+    types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -150,7 +153,7 @@ class LongtermRelationship(BaseModel):
     to_entity_id: int
     from_entity_name: Optional[str] = None
     to_entity_name: Optional[str] = None
-    type: str
+    types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     strength: float = Field(ge=0.0, le=1.0)
@@ -167,7 +170,7 @@ class Entity(BaseModel):
     id: int
     external_id: str
     name: str
-    type: str
+    types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     importance: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -188,7 +191,7 @@ class Relationship(BaseModel):
     to_entity_id: int
     from_entity_name: Optional[str] = None
     to_entity_name: Optional[str] = None
-    type: str
+    types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     strength: float = Field(ge=0.0, le=1.0)
@@ -252,3 +255,71 @@ class RelationshipUpdateData(BaseModel):
     strength: Optional[float] = None
     metadata: Optional[Dict[str, Any]] = None
 
+
+# ============================================================================
+# CONFLICT RESOLUTION MODELS (for batch update and consolidation)
+# ============================================================================
+
+
+class ConflictEntityDetail(BaseModel):
+    """Detailed entity conflict information."""
+
+    name: str
+    shortterm_types: List[str] = Field(default_factory=list)
+    active_types: List[str] = Field(default_factory=list)
+    merged_types: List[str] = Field(default_factory=list)
+    shortterm_confidence: float
+    active_confidence: float
+    merged_confidence: float
+    shortterm_description: Optional[str] = None
+    active_description: Optional[str] = None
+    merged_description: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConflictRelationshipDetail(BaseModel):
+    """Detailed relationship conflict information."""
+
+    from_entity: str
+    to_entity: str
+    shortterm_types: List[str] = Field(default_factory=list)
+    active_types: List[str] = Field(default_factory=list)
+    merged_types: List[str] = Field(default_factory=list)
+    shortterm_confidence: float
+    active_confidence: float
+    merged_confidence: float
+    shortterm_strength: float
+    active_strength: float
+    merged_strength: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConflictSection(BaseModel):
+    """Section with potentially conflicting chunks."""
+
+    section_id: str
+    section_content: str
+    update_count: int
+    existing_chunks: List[ShorttermMemoryChunk] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConsolidationConflicts(BaseModel):
+    """Comprehensive conflict tracking for consolidation."""
+
+    external_id: str
+    active_memory_id: int
+    shortterm_memory_id: int
+    created_at: datetime
+    total_conflicts: int = 0
+
+    # Enhanced conflict tracking
+    sections: List[ConflictSection] = Field(default_factory=list)
+    entity_conflicts: List[ConflictEntityDetail] = Field(default_factory=list)
+    relationship_conflicts: List[ConflictRelationshipDetail] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)

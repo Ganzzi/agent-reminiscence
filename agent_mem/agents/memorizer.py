@@ -1,13 +1,8 @@
 """
-Memorizefrom agent_mem.agents.er_extractor import (
-    extract_entities_and_relationships,
-    ExtractionResult,
-    ExtractedEntity,
-    ExtractedRelationship
-)t - Memory Consolidation and Conflict Resolution.
+Memorizer - Memory Consolidation and Conflict Resolution.
 
 Handles consolidation of active memories to shortterm, including entity/relationship
-extraction and conflict resolution.
+extraction and conflict resolution using a Pydantic AI agent.
 """
 
 import logging
@@ -16,11 +11,11 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
-from agent_mem.agents.er_extractor import (
-    extract_entities_and_relationships,
-    ExtractionResult,
-    ExtractedEntity,
-    ExtractedRelationship,
+from agent_mem.config.settings import get_config
+from agent_mem.services.llm_model_provider import model_provider
+from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_mem.database.models import (
+    ConsolidationConflicts,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,338 +33,422 @@ class MemorizerDeps:
     external_id: str
     active_memory_id: int
     shortterm_memory_id: int
-    memory_manager: Any  # MemoryManager instance (avoids circular import)
+    shortterm_repo: ShorttermMemoryRepository
 
 
 # =========================================================================
-# OUTPUT MODELS
+# RESPONSE MODELS
 # =========================================================================
 
 
-class ChunkOperation(BaseModel):
-    """A chunk operation to perform."""
+class ChunkUpdateAction(BaseModel):
+    """Action to update a shortterm memory chunk."""
 
-    operation: str = Field(description="Operation type: 'update' or 'create'")
-    chunk_id: Optional[int] = Field(default=None, description="Chunk ID for updates")
-    content: str = Field(description="Chunk content")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class EntityOperation(BaseModel):
-    """An entity operation to perform."""
-
-    operation: str = Field(description="Operation type: 'create' or 'merge' or 'conflict'")
-    entity_id: Optional[int] = Field(default=None, description="Entity ID for merge/conflict")
-    name: str = Field(description="Entity name")
-    entity_type: str = Field(description="Entity type")
-    confidence: float = Field(description="Confidence score")
-    reason: str = Field(description="Reason for this operation")
+    chunk_id: int
+    new_content: str
+    reason: str = Field(description="Why this update is needed")
 
 
-class RelationshipOperation(BaseModel):
-    """A relationship operation to perform."""
+class ChunkCreateAction(BaseModel):
+    """Action to create a new shortterm memory chunk."""
 
-    from_entity: str = Field(description="Source entity name")
-    to_entity: str = Field(description="Target entity name")
-    relationship_type: str = Field(description="Relationship type")
-    confidence: float = Field(description="Confidence score")
-
-
-class ConsolidationPlan(BaseModel):
-    """Plan for consolidating active memory to shortterm."""
-
-    chunk_operations: List[ChunkOperation] = Field(
-        default_factory=list, description="Operations to perform on chunks"
-    )
-    entity_operations: List[EntityOperation] = Field(
-        default_factory=list, description="Operations to perform on entities"
-    )
-    relationship_operations: List[RelationshipOperation] = Field(
-        default_factory=list, description="Operations to perform on relationships"
-    )
-    summary: str = Field(description="Summary of consolidation plan")
+    content: str
+    chunk_order: int
+    section_id: Optional[str] = None
+    reason: str = Field(description="Why this chunk should be created")
 
 
-# =========================================================================
-# SYSTEM PROMPT
-# =========================================================================
+class EntityUpdateAction(BaseModel):
+    """Action to update an entity."""
 
-SYSTEM_PROMPT = """You are a Memory Consolidation Specialist (Memorizer Agent).
+    entity_id: int
+    name: Optional[str] = None
+    types: Optional[List[str]] = None
+    description: Optional[str] = None
+    confidence: Optional[float] = None
+    reason: str = Field(description="Why this update is needed")
 
-**Your Role:**
-Consolidate active memories into shortterm memories by:
-1. Analyzing content for chunk updates
-2. Identifying entity extraction needs
-3. Planning relationship mapping
-4. Resolving conflicts between existing and new information
 
-**Workflow:**
-1. **Analyze Input Context:**
-   - Active memory content
-   - Existing shortterm chunks
-   - Existing shortterm entities
-   - Existing shortterm relationships
+class RelationshipUpdateAction(BaseModel):
+    """Action to update a relationship."""
 
-2. **Plan Chunk Operations:**
-   - Which chunks to UPDATE with enhanced content
-   - Which NEW chunks to CREATE for additional content
-   - Ensure chunks have context for standalone comprehension
+    relationship_id: int
+    types: Optional[List[str]] = None
+    description: Optional[str] = None
+    confidence: Optional[float] = None
+    strength: Optional[float] = None
+    reason: str = Field(description="Why this update is needed")
 
-3. **Plan Entity Operations:**
-   - MERGE: If new entity is similar to existing (same name/type)
-   - CREATE: If new entity is distinct
-   - CONFLICT: If ambiguous (mark for manual review)
-   - Use similarity thresholds:
-     * >= 0.85 similarity AND >= 0.7 overlap → MERGE
-     * < thresholds → CREATE or CONFLICT
 
-4. **Plan Relationship Operations:**
-   - Map relationships between entities
-   - Ensure both entities exist before creating relationships
+class ConflictResolution(BaseModel):
+    """Resolution decisions for conflicts."""
 
-**Guidelines:**
-- Be conservative with merges (prefer creating separate entities if unsure)
-- Always provide clear reasoning for operations
-- Include context in new chunks (e.g., "[Context: Section name] content...")
-- Use high confidence (0.8-1.0) for explicit information
-- Use medium confidence (0.6-0.8) for inferred information
-- Use low confidence (0.4-0.6) for ambiguous information
-
-**Output Format:**
-Provide a structured plan with:
-- chunk_operations: List of chunk operations
-- entity_operations: List of entity operations
-- relationship_operations: List of relationship operations
-- summary: Brief description of the consolidation plan
-
-**Important:**
-- Don't execute operations, just plan them
-- Memory manager will execute the plan
-- Be thorough but precise
-- Prioritize data quality over quantity
-"""
+    chunk_updates: List[ChunkUpdateAction] = Field(default_factory=list)
+    chunk_creates: List[ChunkCreateAction] = Field(default_factory=list)
+    entity_updates: List[EntityUpdateAction] = Field(default_factory=list)
+    relationship_updates: List[RelationshipUpdateAction] = Field(default_factory=list)
+    summary: str = Field(description="Summary of all resolution decisions")
 
 
 # =========================================================================
-# AGENT CREATION
+# MEMORIZER AGENT
 # =========================================================================
 
 
-def get_memorizer_agent() -> Agent[MemorizerDeps, ConsolidationPlan]:
+def _get_memorizer_agent() -> Agent[MemorizerDeps, ConflictResolution]:
     """
-    Factory function to create the Memorizer Agent.
+    Get or create the memorizer agent (lazy initialization).
 
-    Returns:
-        Configured Agent instance
+    This avoids requiring an API key at module import time.
     """
-    return Agent(
-        model="google-gla:gemini-2.5-flash",  # Standard Gemini Flash
+    config = get_config()
+
+    # Get model from provider using configuration
+    model = model_provider.get_model(config.memorizer_agent_model)
+
+    # Initialize the agent
+    agent = Agent(
+        model=model,
         deps_type=MemorizerDeps,
-        system_prompt=SYSTEM_PROMPT,
-        output_type=ConsolidationPlan,  # Correct: output_type, not result_type
-        model_settings={
-            "temperature": 0.6,  # Balanced for analysis and creativity
-        },
-        retries=2,
+        output_type=ConflictResolution,
+        system_prompt="""You are an expert memory consolidation agent responsible for resolving conflicts 
+between active memory and shortterm memory.
+
+Your goal is to:
+1. Analyze conflicts in memory chunks, entities, and relationships
+2. Decide how to merge conflicting information intelligently
+3. Preserve important details while avoiding redundancy
+4. Maintain consistency and accuracy across the memory system
+
+When resolving conflicts:
+- Favor more recent or more detailed information
+- Merge complementary information rather than replacing
+- Maintain entity and relationship integrity
+- Use confidence scores to guide decisions
+- Explain your reasoning for each action
+
+Available tools:
+- update_chunk: Update existing shortterm memory chunk
+- create_chunk: Create new shortterm memory chunk
+- update_entity: Update entity information
+- update_relationship: Update relationship information""",
     )
 
+    # Register tools
+    @agent.tool
+    async def update_chunk(
+        ctx: RunContext[MemorizerDeps], chunk_id: int, new_content: str, reason: str
+    ) -> Dict[str, Any]:
+        """
+        Update a shortterm memory chunk with new content.
 
-# Create global agent instance (lazy initialization to avoid API key errors on import)
-_memorizer_agent: Optional[Agent[MemorizerDeps, ConsolidationPlan]] = None
+        Args:
+            chunk_id: ID of the chunk to update
+            new_content: New content for the chunk
+            reason: Explanation for why this update is needed
 
+        Returns:
+            Result of the update operation
+        """
+        try:
+            logger.info(f"Updating chunk {chunk_id}. Reason: {reason}")
 
-def _get_agent() -> Agent[MemorizerDeps, ConsolidationPlan]:
-    """Get or create the Memorizer Agent instance."""
-    global _memorizer_agent
-    if _memorizer_agent is None:
-        _memorizer_agent = get_memorizer_agent()
-    return _memorizer_agent
+            updated_chunk = await ctx.deps.shortterm_repo.update_chunk(
+                chunk_id=chunk_id, content=new_content
+            )
+
+            if not updated_chunk:
+                return {"success": False, "error": f"Chunk {chunk_id} not found"}
+
+            return {
+                "success": True,
+                "chunk_id": updated_chunk.id,
+                "reason": reason,
+            }
+        except Exception as e:
+            logger.error(f"Error updating chunk {chunk_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    @agent.tool
+    async def create_chunk(
+        ctx: RunContext[MemorizerDeps],
+        content: str,
+        chunk_order: int,
+        section_id: Optional[str],
+        reason: str,
+    ) -> Dict[str, Any]:
+        """
+        Create a new shortterm memory chunk.
+
+        Args:
+            content: Content of the new chunk
+            chunk_order: Order position for the chunk
+            section_id: Optional section ID reference
+            reason: Explanation for why this chunk should be created
+
+        Returns:
+            Result of the create operation
+        """
+        try:
+            logger.info(f"Creating new chunk in section {section_id}. Reason: {reason}")
+
+            # Note: Embedding will be None - embedding service would be needed for full implementation
+            new_chunk = await ctx.deps.shortterm_repo.create_chunk(
+                shortterm_memory_id=ctx.deps.shortterm_memory_id,
+                external_id=ctx.deps.external_id,
+                content=content,
+                chunk_order=chunk_order,
+                section_id=section_id,
+                metadata={"source": "memorizer_agent", "reason": reason},
+            )
+
+            return {
+                "success": True,
+                "chunk_id": new_chunk.id,
+                "reason": reason,
+            }
+        except Exception as e:
+            logger.error(f"Error creating chunk: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    @agent.tool
+    async def update_entity(
+        ctx: RunContext[MemorizerDeps],
+        entity_id: int,
+        name: Optional[str],
+        types: Optional[List[str]],
+        description: Optional[str],
+        confidence: Optional[float],
+        reason: str,
+    ) -> Dict[str, Any]:
+        """
+        Update an entity with new information.
+
+        Args:
+            entity_id: ID of the entity to update
+            name: New name (optional)
+            types: New types list (optional)
+            description: New description (optional)
+            confidence: New confidence score (optional)
+            reason: Explanation for why this update is needed
+
+        Returns:
+            Result of the update operation
+        """
+        try:
+            logger.info(f"Updating entity {entity_id}. Reason: {reason}")
+
+            updated_entity = await ctx.deps.shortterm_repo.update_entity(
+                entity_id=entity_id,
+                name=name,
+                types=types,
+                description=description,
+                confidence=confidence,
+            )
+
+            if not updated_entity:
+                return {"success": False, "error": f"Entity {entity_id} not found"}
+
+            return {
+                "success": True,
+                "entity_id": updated_entity.id,
+                "reason": reason,
+            }
+        except Exception as e:
+            logger.error(f"Error updating entity {entity_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    @agent.tool
+    async def update_relationship(
+        ctx: RunContext[MemorizerDeps],
+        relationship_id: int,
+        types: Optional[List[str]],
+        description: Optional[str],
+        confidence: Optional[float],
+        strength: Optional[float],
+        reason: str,
+    ) -> Dict[str, Any]:
+        """
+        Update a relationship with new information.
+
+        Args:
+            relationship_id: ID of the relationship to update
+            types: New types list (optional)
+            description: New description (optional)
+            confidence: New confidence score (optional)
+            strength: New strength score (optional)
+            reason: Explanation for why this update is needed
+
+        Returns:
+            Result of the update operation
+        """
+        try:
+            logger.info(f"Updating relationship {relationship_id}. Reason: {reason}")
+
+            updated_rel = await ctx.deps.shortterm_repo.update_relationship(
+                relationship_id=relationship_id,
+                types=types,
+                description=description,
+                confidence=confidence,
+                strength=strength,
+            )
+
+            if not updated_rel:
+                return {"success": False, "error": f"Relationship {relationship_id} not found"}
+
+            return {
+                "success": True,
+                "relationship_id": updated_rel.id,
+                "reason": reason,
+            }
+        except Exception as e:
+            logger.error(f"Error updating relationship {relationship_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    return agent
 
 
 # =========================================================================
-# MAIN FUNCTION
+# MAIN CONSOLIDATION FUNCTION
 # =========================================================================
 
 
-async def consolidate_memory(
-    external_id: str,
-    active_memory_id: int,
-    shortterm_memory_id: int,
-    active_content: str,
-    existing_chunks: List[Dict[str, Any]],
-    existing_entities: List[Dict[str, Any]],
-    existing_relationships: List[Dict[str, Any]],
-    memory_manager: Any,
-) -> ConsolidationPlan:
+def format_conflicts_as_text(conflicts: ConsolidationConflicts) -> str:
     """
-    Create a consolidation plan for active memory → shortterm memory.
+    Format ConsolidationConflicts as a readable text prompt for the agent.
 
     Args:
-        external_id: Agent identifier
-        active_memory_id: Active memory ID
-        shortterm_memory_id: Shortterm memory ID
-        active_content: Content from active memory
-        existing_chunks: Existing shortterm chunks
-        existing_entities: Existing shortterm entities
-        existing_relationships: Existing shortterm relationships
-        memory_manager: MemoryManager instance
+        conflicts: ConsolidationConflicts object
 
     Returns:
-        ConsolidationPlan with operations to perform
+        Formatted text representation
+    """
+    lines = [
+        "# Memory Consolidation Conflicts",
+        "",
+        f"External ID: {conflicts.external_id}",
+        f"Active Memory ID: {conflicts.active_memory_id}",
+        f"Shortterm Memory ID: {conflicts.shortterm_memory_id}",
+        f"Total Conflicts: {conflicts.total_conflicts}",
+        f"Timestamp: {conflicts.created_at.isoformat()}",
+        "",
+    ]
 
-    Raises:
-        Exception: If planning fails after retries
+    # Section conflicts
+    if conflicts.sections:
+        lines.append("## Section Conflicts")
+        lines.append("")
+        for i, section in enumerate(conflicts.sections, 1):
+            lines.append(f"### Section {i}: {section.section_id}")
+            lines.append(f"- Update Count: {section.update_count}")
+            lines.append(f"- Existing Chunks: {len(section.existing_chunks)}")
+            lines.append(f"- New Content Length: {len(section.section_content)} chars")
+            lines.append("")
+            lines.append("**New Content:**")
+            lines.append(f"```\n{section.section_content}\n```")
+            lines.append("")
+            lines.append("**Existing Chunks:**")
+            for chunk in section.existing_chunks:
+                lines.append(f"- Chunk {chunk.id} (order {chunk.chunk_order}): {chunk.content}")
+            lines.append("")
+
+    # Entity conflicts
+    if conflicts.entity_conflicts:
+        lines.append("## Entity Conflicts")
+        lines.append("")
+        for i, entity in enumerate(conflicts.entity_conflicts, 1):
+            lines.append(f"### Entity {i}: {entity.name}")
+            lines.append(f"- Shortterm Types: {entity.shortterm_types}")
+            lines.append(f"- Active Types: {entity.active_types}")
+            lines.append(f"- Merged Types: {entity.merged_types}")
+            lines.append(f"- Shortterm Confidence: {entity.shortterm_confidence}")
+            lines.append(f"- Active Confidence: {entity.active_confidence}")
+            lines.append(f"- Merged Confidence: {entity.merged_confidence}")
+            if entity.shortterm_description:
+                lines.append(f"- Shortterm Description: {entity.shortterm_description}")
+            if entity.active_description:
+                lines.append(f"- Active Description: {entity.active_description}")
+            if entity.merged_description:
+                lines.append(f"- Merged Description: {entity.merged_description}")
+            lines.append("")
+
+    # Relationship conflicts
+    if conflicts.relationship_conflicts:
+        lines.append("## Relationship Conflicts")
+        lines.append("")
+        for i, rel in enumerate(conflicts.relationship_conflicts, 1):
+            lines.append(f"### Relationship {i}: {rel.from_entity} -> {rel.to_entity}")
+            lines.append(f"- Shortterm Types: {rel.shortterm_types}")
+            lines.append(f"- Active Types: {rel.active_types}")
+            lines.append(f"- Merged Types: {rel.merged_types}")
+            lines.append(f"- Shortterm Confidence: {rel.shortterm_confidence}")
+            lines.append(f"- Active Confidence: {rel.active_confidence}")
+            lines.append(f"- Merged Confidence: {rel.merged_confidence}")
+            lines.append(f"- Shortterm Strength: {rel.shortterm_strength}")
+            lines.append(f"- Active Strength: {rel.active_strength}")
+            lines.append(f"- Merged Strength: {rel.merged_strength}")
+            lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append(
+        "Please analyze these conflicts and provide resolution actions using the available tools."
+    )
+
+    return "\n".join(lines)
+
+
+async def resolve_conflicts(
+    conflicts: ConsolidationConflicts, shortterm_repo: ShorttermMemoryRepository
+) -> ConflictResolution:
+    """
+    Resolve conflicts using the memorizer agent.
+
+    Args:
+        conflicts: ConsolidationConflicts object with all conflict information
+        shortterm_repo: Repository for shortterm memory operations
+
+    Returns:
+        ConflictResolution with all actions taken
     """
     logger.info(
-        f"Creating consolidation plan for active memory {active_memory_id} "
-        f"→ shortterm memory {shortterm_memory_id}"
+        f"Resolving conflicts for external_id={conflicts.external_id}, "
+        f"total_conflicts={conflicts.total_conflicts}"
     )
 
+    # Create dependencies
+    deps = MemorizerDeps(
+        external_id=conflicts.external_id,
+        active_memory_id=conflicts.active_memory_id,
+        shortterm_memory_id=conflicts.shortterm_memory_id,
+        shortterm_repo=shortterm_repo,
+    )
+
+    # Format conflicts as text prompt
+    conflict_text = format_conflicts_as_text(conflicts)
+
     try:
-        # Create dependencies
-        deps = MemorizerDeps(
-            external_id=external_id,
-            active_memory_id=active_memory_id,
-            shortterm_memory_id=shortterm_memory_id,
-            memory_manager=memory_manager,
-        )
+        # Get the agent instance (lazy initialization)
+        agent = _get_memorizer_agent()
 
-        # Build context for the agent
-        context = _build_consolidation_context(
-            active_content=active_content,
-            existing_chunks=existing_chunks,
-            existing_entities=existing_entities,
-            existing_relationships=existing_relationships,
-        )
+        # Run the agent
+        result = await agent.run(user_prompt=conflict_text, deps=deps)
+        resolution = result.output
 
-        # Run agent to create plan
-        agent = _get_agent()
-        result = await agent.run(context, deps=deps)
-
+        logger.info(f"Agent resolution complete: {resolution.summary}")
         logger.info(
-            f"Created consolidation plan: "
-            f"{len(result.output.chunk_operations)} chunk ops, "
-            f"{len(result.output.entity_operations)} entity ops, "
-            f"{len(result.output.relationship_operations)} relationship ops"
+            f"Actions: {len(resolution.chunk_updates)} chunk updates, "
+            f"{len(resolution.chunk_creates)} chunk creates, "
+            f"{len(resolution.entity_updates)} entity updates, "
+            f"{len(resolution.relationship_updates)} relationship updates"
         )
 
-        return result.output
+        return resolution
 
     except Exception as e:
-        logger.error(f"Consolidation planning failed: {e}")
-        raise
+        logger.error(f"Error resolving conflicts with agent: {e}", exc_info=True)
 
-
-# =========================================================================
-# HELPER FUNCTIONS
-# =========================================================================
-
-
-def _build_consolidation_context(
-    active_content: str,
-    existing_chunks: List[Dict[str, Any]],
-    existing_entities: List[Dict[str, Any]],
-    existing_relationships: List[Dict[str, Any]],
-) -> str:
-    """
-    Build context string for the Memorizer Agent.
-
-    Args:
-        active_content: Content from active memory
-        existing_chunks: Existing shortterm chunks
-        existing_entities: Existing shortterm entities
-        existing_relationships: Existing shortterm relationships
-
-    Returns:
-        Formatted context string
-    """
-    context_parts = []
-
-    # Active memory content
-    context_parts.append("=== ACTIVE MEMORY CONTENT ===")
-    context_parts.append(active_content)
-    context_parts.append("")
-
-    # Existing chunks
-    context_parts.append("=== EXISTING SHORTTERM CHUNKS ===")
-    if existing_chunks:
-        for i, chunk in enumerate(existing_chunks, 1):
-            context_parts.append(f"Chunk {i} (ID: {chunk.get('id', 'unknown')}):")
-            context_parts.append(chunk.get("content", ""))
-            context_parts.append("")
-    else:
-        context_parts.append("No existing chunks")
-        context_parts.append("")
-
-    # Existing entities
-    context_parts.append("=== EXISTING SHORTTERM ENTITIES ===")
-    if existing_entities:
-        for entity in existing_entities:
-            context_parts.append(
-                f"- {entity.get('name')} "
-                f"(Type: {entity.get('type')}, "
-                f"Confidence: {entity.get('confidence', 0):.2f}, "
-                f"ID: {entity.get('id')})"
-            )
-        context_parts.append("")
-    else:
-        context_parts.append("No existing entities")
-        context_parts.append("")
-
-    # Existing relationships
-    context_parts.append("=== EXISTING SHORTTERM RELATIONSHIPS ===")
-    if existing_relationships:
-        for rel in existing_relationships:
-            context_parts.append(
-                f"- {rel.get('from_entity_name')} "
-                f"-[{rel.get('type')}]-> "
-                f"{rel.get('to_entity_name')}"
-            )
-        context_parts.append("")
-    else:
-        context_parts.append("No existing relationships")
-        context_parts.append("")
-
-    return "\n".join(context_parts)
-
-
-def validate_consolidation_plan(plan: ConsolidationPlan) -> bool:
-    """
-    Validate a consolidation plan.
-
-    Args:
-        plan: Consolidation plan to validate
-
-    Returns:
-        True if plan is valid
-    """
-    # Check if we have any operations
-    if not (plan.chunk_operations or plan.entity_operations or plan.relationship_operations):
-        logger.warning("Consolidation plan has no operations")
-        return False
-
-    # Validate chunk operations
-    for op in plan.chunk_operations:
-        if op.operation not in ["update", "create"]:
-            logger.error(f"Invalid chunk operation: {op.operation}")
-            return False
-        if op.operation == "update" and not op.chunk_id:
-            logger.error("Update operation missing chunk_id")
-            return False
-
-    # Validate entity operations
-    for op in plan.entity_operations:
-        if op.operation not in ["create", "merge", "conflict"]:
-            logger.error(f"Invalid entity operation: {op.operation}")
-            return False
-        if op.confidence < 0.0 or op.confidence > 1.0:
-            logger.error(f"Invalid confidence score: {op.confidence}")
-            return False
-
-    # Validate relationship operations
-    for op in plan.relationship_operations:
-        if op.confidence < 0.0 or op.confidence > 1.0:
-            logger.error(f"Invalid confidence score: {op.confidence}")
-            return False
-
-    return True
+        # Return empty resolution on error
+        return ConflictResolution(
+            summary=f"Error during conflict resolution: {str(e)}",
+        )

@@ -10,6 +10,9 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+from agent_mem.config.settings import get_config
+from agent_mem.services.llm_model_provider import model_provider
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,11 +224,16 @@ def get_er_extractor_agent() -> Agent[None, ExtractionResult]:
     Returns:
         Configured Agent instance
     """
+    config = get_config()
+
+    # Get model from provider using configuration
+    model = model_provider.get_model(config.er_extractor_agent_model)
+
     return Agent(
-        model="google-gla:gemini-2.5-flash-lite",  # Fast model for extraction
+        model=model,
         deps_type=None,  # No dependencies needed
         system_prompt=SYSTEM_PROMPT,
-        output_type=ExtractionResult,  # Correct: output_type, not result_type
+        output_type=ExtractionResult,
         model_settings={
             "temperature": 0.3,  # Low temperature for consistency
         },
@@ -279,46 +287,3 @@ async def extract_entities_and_relationships(content: str) -> ExtractionResult:
     except Exception as e:
         logger.error(f"Entity extraction failed: {e}")
         raise
-
-
-# =========================================================================
-# HELPER FUNCTIONS
-# =========================================================================
-
-
-def validate_extraction_result(result: ExtractionResult) -> bool:
-    """
-    Validate extraction result quality.
-
-    Args:
-        result: Extraction result to validate
-
-    Returns:
-        True if result is valid
-    """
-    # Check if we have entities
-    if not result.entities:
-        logger.warning("No entities extracted")
-        return False
-
-    # Check confidence scores
-    low_confidence_count = sum(1 for e in result.entities if e.confidence < 0.5)
-
-    if low_confidence_count > len(result.entities) * 0.5:
-        logger.warning(f"Too many low-confidence entities: {low_confidence_count}")
-        return False
-
-    # Check relationship validity
-    entity_names = {e.name for e in result.entities}
-    invalid_relationships = [
-        r
-        for r in result.relationships
-        if r.source not in entity_names or r.target not in entity_names
-    ]
-
-    if invalid_relationships:
-        logger.warning(f"{len(invalid_relationships)} relationships reference unknown entities")
-        # Remove invalid relationships
-        result.relationships = [r for r in result.relationships if r not in invalid_relationships]
-
-    return True

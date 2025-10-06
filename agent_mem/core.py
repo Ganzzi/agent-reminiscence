@@ -26,7 +26,7 @@ class AgentMem:
     Provides 4 simple methods to manage all memory tiers:
     1. create_active_memory(external_id, ...) - Create new working memory
     2. get_active_memories(external_id) - Get all working memories
-    3. update_active_memory_section(external_id, memory_id, section_id, ...) - Update section
+    3. update_active_memory_sections(external_id, memory_id, sections) - Update multiple sections
     4. retrieve_memories(external_id, query, ...) - Search shortterm and longterm memories
 
     Example:
@@ -42,12 +42,13 @@ class AgentMem:
             initial_sections={"current_task": {"content": "...", "update_count": 0}}
         )
 
-        # Update a specific section
-        await agent_mem.update_active_memory_section(
+        # Update sections (supports single or multiple sections)
+        await agent_mem.update_active_memory_sections(
             external_id="agent-123",
             memory_id=1,
-            section_id="progress",
-            new_content="Updated progress..."
+            sections=[
+                {"section_id": "progress", "new_content": "Updated progress..."}
+            ]
         )
 
         # Retrieve information
@@ -202,52 +203,53 @@ class AgentMem:
         logger.info(f"Retrieving all active memories for {external_id_str}")
         return await self._memory_manager.get_active_memories(external_id=external_id_str)
 
-    async def update_active_memory_section(
+    async def update_active_memory_sections(
         self,
         external_id: str | UUID | int,
         memory_id: int,
-        section_id: str,
-        new_content: str,
+        sections: List[Dict[str, str]],
     ) -> ActiveMemory:
         """
-        Update a specific section in an active memory.
+        Update multiple sections in an active memory (batch update).
 
-        This automatically increments the section's update_count and triggers
-        consolidation to shortterm memory when the threshold is reached.
+        After updating all sections, checks if total update count across all sections
+        exceeds threshold for consolidation. Consolidation runs in background if triggered.
 
         Args:
             external_id: Unique identifier for the agent
             memory_id: ID of the memory to update
-            section_id: ID of the section to update (defined in template)
-            new_content: New content for the section
+            sections: List of section updates, each dict with 'section_id' and 'new_content'
+                     Example: [{"section_id": "progress", "new_content": "..."}, ...]
 
         Returns:
             Updated ActiveMemory object
 
         Raises:
             RuntimeError: If not initialized
-            ValueError: If memory or section not found
+            ValueError: If memory not found or sections invalid
 
         Example:
             ```python
-            updated = await agent_mem.update_active_memory_section(
+            memory = await agent_mem.update_active_memory_sections(
                 external_id="agent-123",
                 memory_id=1,
-                section_id="progress",
-                new_content="# Progress\n- Completed step 1\n- Working on step 2"
+                sections=[
+                    {"section_id": "progress", "new_content": "Updated progress..."},
+                    {"section_id": "notes", "new_content": "New notes..."}
+                ]
             )
-            print(updated.sections["progress"]["update_count"])  # Shows increment
             ```
         """
         self._ensure_initialized()
         external_id_str = str(external_id)
 
-        logger.info(f"Updating section '{section_id}' in memory {memory_id} for {external_id_str}")
-        return await self._memory_manager.update_active_memory_section(
+        logger.info(
+            f"Updating {len(sections)} sections in memory {memory_id} for {external_id_str}"
+        )
+        return await self._memory_manager.update_active_memory_sections(
             external_id=external_id_str,
             memory_id=memory_id,
-            section_id=section_id,
-            new_content=new_content,
+            sections=sections,
         )
 
     async def delete_active_memory(
