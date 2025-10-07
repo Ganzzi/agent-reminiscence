@@ -10,6 +10,7 @@ import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+from agent_mem.database import postgres_manager
 from agent_mem.database.postgres_manager import PostgreSQLManager
 from agent_mem.database.models import ActiveMemory
 
@@ -19,16 +20,76 @@ logger = logging.getLogger(__name__)
 class ActiveMemoryRepository:
     """
     Repository for active memory CRUD operations.
-
-    Active memories represent the agent's current working context -
-    tasks in progress, recent decisions, and immediate work context.
-
-    Uses template-driven structure:
-    - template_content: YAML template defining section structure
-    - sections: JSONB {section_id: {content: str, update_count: int}}
     """
 
-    def __init__(self, postgres_manager: PostgreSQLManager):
+    def __init__(self, postgres: PostgreSQLManager):
+        self.postgres = postgres
+        self.logger = logging.getLogger(__name__)
+
+    def _row_to_model(self, row) -> ActiveMemory:
+        """Convert database row to ActiveMemory model.
+
+        Args:
+            row: Database row (dict or tuple)
+
+        Returns:
+            ActiveMemory object
+        """
+        # Handle both dict and list/tuple row formats
+        if isinstance(row, dict):
+            return ActiveMemory(
+                id=row["id"],
+                external_id=row["external_id"],
+                title=row["title"],
+                template_content=row["template_content"],
+                sections=row["sections"] if isinstance(row["sections"], dict) else {},
+                metadata=row["metadata"] if isinstance(row["metadata"], dict) else {},
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+        else:
+            # Handle list/tuple format
+            return ActiveMemory(
+                id=row[0],
+                external_id=row[1],
+                title=row[2],
+                template_content=row[3],
+                sections=row[4] if isinstance(row[4], dict) else {},
+                metadata=row[5] if isinstance(row[5], dict) else {},
+                created_at=row[6],
+                updated_at=row[7],
+            )
+
+    async def create(
+        self,
+        external_id: str,
+        title: str,
+        template_content: str,
+        sections: Dict[str, Dict[str, Any]] = None,
+        metadata: Dict[str, Any] = None,
+    ) -> ActiveMemory:
+        """
+        Create a new active memory.
+
+        Active memories represent the agent's current working context -
+        tasks in progress, recent decisions, and immediate work context.
+
+        Uses template-driven structure:
+        - template_content: YAML template defining section structure
+        - sections: JSONB {section_id: {content: str, update_count: int}}
+
+        Example:
+            memory = await repo.create(
+                external_id="agent-123",
+                title="Task Memory",
+                template_content="template:\\n  id: task_v1...",
+                sections={
+                    "current_task": {"content": "# Task\\n...", "update_count": 0},
+                    "progress": {"content": "# Progress\\n...", "update_count": 0}
+                },
+                metadata={"priority": "high"}
+            )
+        """
         """
         Initialize repository.
 
@@ -518,25 +579,3 @@ class ActiveMemoryRepository:
 
         logger.info(f"Deleted active memory {memory_id}")
         return True
-
-    def _row_to_model(self, row) -> ActiveMemory:
-        """
-        Convert a database row to an ActiveMemory model.
-
-        Args:
-            row: Database row dict
-
-        Returns:
-            ActiveMemory object
-        """
-        # Row is a dict with column names as keys
-        return ActiveMemory(
-            id=row["id"],
-            external_id=row["external_id"],
-            title=row["title"],
-            template_content=row["template_content"],
-            sections=row["sections"] if isinstance(row["sections"], dict) else {},
-            metadata=row["metadata"] if isinstance(row["metadata"], dict) else {},
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )

@@ -143,13 +143,11 @@ class TestSectionTracking:
         row_data = (
             1,  # id
             123,  # shortterm_memory_id
-            "agent-123",  # external_id
             "Test chunk content",  # content
-            0,  # chunk_order
-            [0.1] * 768,  # embedding
             "progress",  # section_id (NEW)
             json.dumps({"source": "active_memory"}),  # metadata
-            datetime.now(timezone.utc),  # created_at
+            0,  # access_count
+            None,  # last_access
         )
 
         mock_result.result.return_value = [row_data]
@@ -164,7 +162,6 @@ class TestSectionTracking:
             shortterm_memory_id=123,
             external_id="agent-123",
             content="Test chunk content",
-            chunk_order=0,
             embedding=[0.1] * 768,
             section_id="progress",  # NEW parameter
             metadata={"source": "active_memory"},
@@ -186,13 +183,11 @@ class TestSectionTracking:
             (
                 i,  # id
                 123,  # shortterm_memory_id
-                "agent-123",  # external_id
                 f"Chunk {i}",  # content
-                i,  # chunk_order
-                [0.1] * 768,  # embedding
                 "progress",  # section_id
                 json.dumps({}),  # metadata
-                datetime.now(timezone.utc),  # created_at
+                0,  # access_count
+                None,  # last_access
             )
             for i in range(3)
         ]
@@ -230,10 +225,11 @@ class TestUpdateCountTracking:
             123,  # id
             "agent-123",  # external_id
             "Test Memory",  # title
+            "Test summary",  # summary
             5,  # update_count (incremented)
             json.dumps({}),  # metadata
             datetime.now(timezone.utc),  # created_at
-            datetime.now(timezone.utc),  # updated_at
+            datetime.now(timezone.utc),  # last_updated
         )
 
         mock_result.result.return_value = [row_data]
@@ -262,10 +258,11 @@ class TestUpdateCountTracking:
             123,  # id
             "agent-123",  # external_id
             "Test Memory",  # title
+            "Test summary",  # summary
             0,  # update_count (reset)
             json.dumps({}),  # metadata
             datetime.now(timezone.utc),  # created_at
-            datetime.now(timezone.utc),  # updated_at
+            datetime.now(timezone.utc),  # last_updated
         )
 
         mock_result.result.return_value = [row_data]
@@ -297,52 +294,45 @@ class TestMetadataTracking:
         updates_array = [
             {
                 "date": "2025-10-05T10:00:00Z",
-                "old_confidence": 0.75,
-                "new_confidence": 0.85,
+                "old_importance": 0.75,
+                "new_importance": 0.85,
                 "source": "shortterm_promotion",
             }
         ]
 
-        row_data = (
-            1,  # id
-            "agent-123",  # external_id
-            "Python",  # name
-            "TECHNOLOGY",  # type
-            "Programming language",  # description
-            0.85,  # confidence
-            0.80,  # importance
-            datetime.now(timezone.utc),  # first_seen
-            datetime.now(timezone.utc),  # last_seen
-            json.dumps({"updates": updates_array}),  # metadata
-            datetime.now(timezone.utc),  # created_at
-            datetime.now(timezone.utc),  # updated_at
+        # Mock a longterm entity (Neo4j entity, use string ID)
+        mock_entity = LongtermEntity(
+            id="neo4j-id-1",
+            external_id="agent-123",
+            name="Python",
+            types=["TECHNOLOGY"],
+            description="Programming language",
+            importance=0.85,
+            metadata={"updates": updates_array},
         )
 
-        mock_result.result.return_value = [row_data]
-        mock_conn.execute = AsyncMock(return_value=mock_result)
-        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_conn.__aexit__ = AsyncMock(return_value=None)
-        mock_pg.connection.return_value = mock_conn
-
         repo = LongtermMemoryRepository(mock_pg, mock_neo4j)
+
+        # Mock update_entity_with_metadata to return the entity
+        repo.update_entity_with_metadata = AsyncMock(return_value=mock_entity)
 
         # Prepare new update
         new_update = {
             "date": "2025-10-05T11:00:00Z",
-            "old_confidence": 0.85,
-            "new_confidence": 0.90,
+            "old_importance": 0.85,
+            "new_importance": 0.90,
             "source": "shortterm_promotion",
         }
         updates_array.append(new_update)
 
         result = await repo.update_entity_with_metadata(
-            entity_id=1,
-            confidence=0.90,
+            entity_id="neo4j-id-1",
+            importance=0.90,
             metadata_update={"updates": updates_array},
         )
 
         assert result is not None
-        assert result.confidence == 0.85  # From mock data
+        assert result.importance == 0.85  # From mock data
         assert "updates" in result.metadata
         assert len(result.metadata["updates"]) >= 1
 
@@ -476,9 +466,9 @@ class TestBackwardCompatibility:
             # Verify it called the batch method
             mock_batch.assert_called_once()
             call_args = mock_batch.call_args
-            assert call_args[1]["memory_id"] == 1
-            assert len(call_args[1]["section_updates"]) == 1
-            assert call_args[1]["section_updates"][0]["section_id"] == "progress"
+            assert call_args.kwargs["memory_id"] == 1
+            assert len(call_args.kwargs["section_updates"]) == 1
+            assert call_args.kwargs["section_updates"][0]["section_id"] == "progress"
 
 
 class TestResetOperations:
@@ -517,7 +507,7 @@ class TestResetOperations:
 
         repo = ActiveMemoryRepository(mock_pg)
 
-        result = await repo.reset_all_section_counts(memory_id=1)
+        result = await repo.reset_section_count(memory_id=1, section_id="all")
 
         assert result is not None
         assert all(section.get("update_count", 0) == 0 for section in result.sections.values())

@@ -347,7 +347,6 @@ async def _handle_search_memories(
                 "name": entity.name,
                 "type": entity.type,
                 "description": entity.description,
-                "confidence": entity.confidence,
                 "importance": entity.importance,
                 "memory_tier": entity.memory_tier,
             }
@@ -360,8 +359,7 @@ async def _handle_search_memories(
                 "to_entity_name": rel.to_entity_name,
                 "type": rel.type,
                 "description": rel.description,
-                "confidence": rel.confidence,
-                "strength": rel.strength,
+                "importance": rel.importance,
                 "memory_tier": rel.memory_tier,
             }
             for rel in result.relationships

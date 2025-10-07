@@ -86,9 +86,9 @@ REQUIRE (e.external_id, e.name) IS UNIQUE;
 //   - name: String (entity name, e.g., "John Doe")
 //   - types: List<String> (entity types, e.g., ["PERSON", "DEVELOPER"])
 //   - description: String (optional, entity description)
-//   - confidence: Float (0.0-1.0, confidence score)
-//   - first_seen: DateTime (ISO 8601 timestamp)
-//   - last_seen: DateTime (ISO 8601 timestamp)
+//   - importance: Float (0.0-1.0, importance score)
+//   - access_count: Integer (number of times accessed)
+//   - last_access: DateTime (ISO 8601 timestamp, last access time)
 //   - metadata: String (JSON string of additional properties)
 // Note: Use elementId(e) to get the node's ID, not the deprecated id(e) function
 
@@ -98,10 +98,9 @@ REQUIRE (e.external_id, e.name) IS UNIQUE;
 //   - name: String (entity name)
 //   - types: List<String> (entity types)
 //   - description: String (optional, entity description)
-//   - confidence: Float (0.0-1.0, confidence score)
 //   - importance: Float (0.0-1.0, importance score)
-//   - first_seen: DateTime (ISO 8601 timestamp)
-//   - last_seen: DateTime (ISO 8601 timestamp)
+//   - access_count: Integer (number of times accessed)
+//   - last_access: DateTime (ISO 8601 timestamp, last access time)
 //   - metadata: String (JSON string of additional properties)
 // Note: Use elementId(e) to get the node's ID, not the deprecated id(e) function
 
@@ -113,12 +112,15 @@ REQUIRE (e.external_id, e.name) IS UNIQUE;
 // Properties:
 //   - external_id: String (agent identifier)
 //   - shortterm_memory_id: Integer (reference to shortterm memory)
+//   - from_entity_name: String (name of source entity)
+//   - to_entity_name: String (name of target entity)
+//   - from_entity_id: String (elementId of source entity)
+//   - to_entity_id: String (elementId of target entity)
 //   - types: List<String> (relationship types, e.g., ["WORKS_WITH", "COLLABORATES"])
 //   - description: String (optional, relationship description)
-//   - confidence: Float (0.0-1.0, confidence score)
-//   - strength: Float (0.0-1.0, relationship strength)
-//   - first_observed: DateTime (ISO 8601 timestamp)
-//   - last_observed: DateTime (ISO 8601 timestamp)
+//   - importance: Float (0.0-1.0, importance score)
+//   - access_count: Integer (number of times accessed)
+//   - last_access: DateTime (ISO 8601 timestamp, last access time)
 //   - metadata: String (JSON string of additional properties)
 // Note: Use elementId(r) to get the relationship's ID, not the deprecated id(r) function
 
@@ -126,13 +128,16 @@ REQUIRE (e.external_id, e.name) IS UNIQUE;
 // Connects (:LongtermEntity)-[:LONGTERM_RELATES]->(:LongtermEntity)
 // Properties:
 //   - external_id: String (agent identifier)
+//   - from_entity_name: String (name of source entity)
+//   - to_entity_name: String (name of target entity)
+//   - from_entity_id: String (elementId of source entity)
+//   - to_entity_id: String (elementId of target entity)
 //   - types: List<String> (relationship types)
 //   - description: String (optional, relationship description)
-//   - confidence: Float (0.0-1.0, confidence score)
-//   - strength: Float (0.0-1.0, relationship strength)
 //   - importance: Float (0.0-1.0, importance score for prioritization)
 //   - start_date: DateTime (ISO 8601 timestamp, when relationship became valid)
-//   - last_updated: DateTime (ISO 8601 timestamp, last time relationship was updated)
+//   - access_count: Integer (number of times accessed)
+//   - last_access: DateTime (ISO 8601 timestamp, last access time)
 //   - metadata: String (JSON string of additional properties)
 // Note: Use elementId(r) to get the relationship's ID, not the deprecated id(r) function
 

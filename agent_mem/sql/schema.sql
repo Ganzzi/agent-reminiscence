@@ -79,11 +79,12 @@ CREATE TABLE IF NOT EXISTS shortterm_memory_chunk (
     id SERIAL PRIMARY KEY,
     shortterm_memory_id INTEGER NOT NULL REFERENCES shortterm_memory (id) ON DELETE CASCADE,
     external_id VARCHAR(255) NOT NULL,
-    chunk_order INTEGER NOT NULL, -- Order of chunk within memory
     content TEXT NOT NULL,
     embedding vector (768), -- Vector dimension configurable (default 768 for nomic-embed-text)
     content_bm25 bm25vector, -- Auto-populated by trigger
     section_id TEXT, -- References active memory section (nullable, for tracking source)
+    access_count INTEGER DEFAULT 0,
+    last_access TIMESTAMP,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -93,12 +94,6 @@ CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_memory_id ON shortterm_memory_chu
 
 -- Index for external_id queries
 CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_external_id ON shortterm_memory_chunk (external_id);
-
--- Index for ordering chunks
-CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_order ON shortterm_memory_chunk (
-    shortterm_memory_id,
-    chunk_order
-);
 
 -- Vector similarity search index using HNSW (Hierarchical Navigable Small World)
 CREATE INDEX IF NOT EXISTS idx_shortterm_chunk_vector ON shortterm_memory_chunk USING hnsw (embedding vector_cosine_ops);
@@ -124,44 +119,26 @@ CREATE TABLE IF NOT EXISTS longterm_memory_chunk (
     id SERIAL PRIMARY KEY,
     external_id VARCHAR(255) NOT NULL,
     shortterm_memory_id INTEGER, -- Reference to source (optional)
-    chunk_order INTEGER NOT NULL,
     content TEXT NOT NULL,
     embedding vector (768),
     content_bm25 bm25vector,
-    confidence_score REAL DEFAULT 0.5, -- Confidence in information accuracy
-    importance_score REAL DEFAULT 0.5, -- Importance for prioritization
+    importance REAL DEFAULT 0.5, -- Importance for prioritization
     metadata JSONB DEFAULT '{}',
     start_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- When information became valid
-    end_date TIMESTAMP, -- NULL means still valid, set to mark as superseded
     last_updated TIMESTAMP, -- Track when chunk was last updated from shortterm
+    access_count INTEGER DEFAULT 0,
+    last_access TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Index for external_id queries
 CREATE INDEX IF NOT EXISTS idx_longterm_chunk_external_id ON longterm_memory_chunk (external_id);
 
--- Index for finding currently valid chunks
-CREATE INDEX IF NOT EXISTS idx_longterm_chunk_valid ON longterm_memory_chunk (
-    external_id,
-    start_date,
-    end_date
-)
-WHERE
-    end_date IS NULL;
-
 -- Index for temporal queries
-CREATE INDEX IF NOT EXISTS idx_longterm_chunk_temporal ON longterm_memory_chunk (
-    external_id,
-    start_date DESC,
-    end_date DESC
-);
+CREATE INDEX IF NOT EXISTS idx_longterm_chunk_temporal ON longterm_memory_chunk (external_id, start_date DESC);
 
 -- Index for importance-based retrieval
-CREATE INDEX IF NOT EXISTS idx_longterm_chunk_importance ON longterm_memory_chunk (
-    external_id,
-    importance_score DESC,
-    confidence_score DESC
-);
+CREATE INDEX IF NOT EXISTS idx_longterm_chunk_importance ON longterm_memory_chunk (external_id, importance DESC);
 
 -- Vector similarity search index
 CREATE INDEX IF NOT EXISTS idx_longterm_chunk_vector ON longterm_memory_chunk USING hnsw (embedding vector_cosine_ops);
@@ -262,26 +239,6 @@ CREATE TRIGGER trigger_update_shortterm_memory_timestamp
 --     "update_count": 5
 --   }
 -- }
--- ============================================================================
--- HELPER VIEWS
--- ============================================================================
--- View to see currently valid longterm chunks
-CREATE OR REPLACE VIEW valid_longterm_chunks AS
-SELECT
-    id,
-    external_id,
-    content,
-    confidence_score,
-    importance_score,
-    start_date,
-    created_at
-FROM longterm_memory_chunk
-WHERE
-    end_date IS NULL
-ORDER BY
-    importance_score DESC,
-    confidence_score DESC;
-
 -- ============================================================================
 -- NOTES
 -- ============================================================================

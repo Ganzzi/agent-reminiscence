@@ -15,6 +15,7 @@ class TestShorttermMemoryRepository:
             "test-123",
             "Test",
             "Summary",
+            0,  # update_count
             {},
             datetime.now(timezone.utc),
             datetime.now(timezone.utc),
@@ -38,6 +39,7 @@ class TestShorttermMemoryRepository:
             "test-123",
             "Test",
             "Summary",
+            0,  # update_count
             {},
             datetime.now(timezone.utc),
             datetime.now(timezone.utc),
@@ -56,8 +58,26 @@ class TestShorttermMemoryRepository:
         mock_pg, mock_neo4j = MagicMock(), MagicMock()
         mock_conn, mock_result = MagicMock(), MagicMock()
         rows = [
-            (1, "test-123", "M1", "S1", {}, datetime.now(timezone.utc), datetime.now(timezone.utc)),
-            (2, "test-123", "M2", "S2", {}, datetime.now(timezone.utc), datetime.now(timezone.utc)),
+            (
+                1,
+                "test-123",
+                "M1",
+                "S1",
+                0,
+                {},
+                datetime.now(timezone.utc),
+                datetime.now(timezone.utc),
+            ),
+            (
+                2,
+                "test-123",
+                "M2",
+                "S2",
+                0,
+                {},
+                datetime.now(timezone.utc),
+                datetime.now(timezone.utc),
+            ),
         ]
         mock_result.result.return_value = rows
         mock_conn.execute = AsyncMock(return_value=mock_result)
@@ -72,7 +92,7 @@ class TestShorttermMemoryRepository:
     async def test_create_chunk(self):
         mock_pg, mock_neo4j = MagicMock(), MagicMock()
         mock_conn, mock_result = MagicMock(), MagicMock()
-        row_data = (1, 1, None, "Test chunk", 0, {})
+        row_data = (1, 1, "Test chunk", None, {}, 0, None)
         mock_result.result.return_value = [row_data]
         mock_conn.execute = AsyncMock(return_value=mock_result)
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -83,7 +103,6 @@ class TestShorttermMemoryRepository:
             shortterm_memory_id=1,
             external_id="test-123",
             content="Test",
-            chunk_order=0,
             embedding=[0.1],
         )
         assert isinstance(result, ShorttermMemoryChunk)
@@ -92,7 +111,7 @@ class TestShorttermMemoryRepository:
     async def test_get_chunk_by_id(self):
         mock_pg, mock_neo4j = MagicMock(), MagicMock()
         mock_conn, mock_result = MagicMock(), MagicMock()
-        row_data = (1, 1, None, "Test chunk", 0, {})
+        row_data = (1, 1, "Test chunk", None, {}, 0, None)
         mock_result.result.return_value = [row_data]
         mock_conn.execute = AsyncMock(return_value=mock_result)
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -106,7 +125,7 @@ class TestShorttermMemoryRepository:
     async def test_get_chunks_by_memory_id(self):
         mock_pg, mock_neo4j = MagicMock(), MagicMock()
         mock_conn, mock_result = MagicMock(), MagicMock()
-        rows = [(1, 1, None, "C1", 0, {}), (2, 1, None, "C2", 1, {})]
+        rows = [(1, 1, "C1", None, {}, 0, None), (2, 1, "C2", None, {}, 0, None)]
         mock_result.result.return_value = rows
         mock_conn.execute = AsyncMock(return_value=mock_result)
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)

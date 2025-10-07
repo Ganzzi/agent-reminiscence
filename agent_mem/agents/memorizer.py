@@ -14,6 +14,8 @@ from pydantic_ai import Agent, RunContext, Tool
 from agent_mem.config.settings import get_config
 from agent_mem.services.llm_model_provider import model_provider
 from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_mem.utils.agent_logger import save_agent_run, log_usage_summary
+import json
 from agent_mem.database.models import (
     ConsolidationConflicts,
 )
@@ -65,7 +67,7 @@ class EntityUpdateAction(BaseModel):
     name: Optional[str] = None
     types: Optional[List[str]] = None
     description: Optional[str] = None
-    confidence: Optional[float] = None
+    importance: Optional[float] = None
     reason: str = Field(description="Why this update is needed")
 
 
@@ -75,7 +77,7 @@ class RelationshipUpdateAction(BaseModel):
     relationship_id: int
     types: Optional[List[str]] = None
     description: Optional[str] = None
-    confidence: Optional[float] = None
+    importance: Optional[float] = None
     strength: Optional[float] = None
     reason: str = Field(description="Why this update is needed")
 
@@ -178,7 +180,7 @@ async def update_entity(
     name: Optional[str],
     types: Optional[List[str]],
     description: Optional[str],
-    confidence: Optional[float],
+    importance: Optional[float],
     reason: str,
 ) -> Dict[str, Any]:
     """
@@ -189,7 +191,7 @@ async def update_entity(
         name: New name (optional)
         types: New types list (optional)
         description: New description (optional)
-        confidence: New confidence score (optional)
+        importance: New importance score (optional)
         reason: Explanation for why this update is needed
 
     Returns:
@@ -203,7 +205,7 @@ async def update_entity(
             name=name,
             types=types,
             description=description,
-            confidence=confidence,
+            importance=importance,
         )
 
         if not updated_entity:
@@ -224,7 +226,7 @@ async def update_relationship(
     relationship_id: int,
     types: Optional[List[str]],
     description: Optional[str],
-    confidence: Optional[float],
+    importance: Optional[float],
     strength: Optional[float],
     reason: str,
 ) -> Dict[str, Any]:
@@ -235,7 +237,7 @@ async def update_relationship(
         relationship_id: ID of the relationship to update
         types: New types list (optional)
         description: New description (optional)
-        confidence: New confidence score (optional)
+        importance: New importance score (optional)
         strength: New strength score (optional)
         reason: Explanation for why this update is needed
 
@@ -249,7 +251,7 @@ async def update_relationship(
             relationship_id=relationship_id,
             types=types,
             description=description,
-            confidence=confidence,
+            importance=importance,
             strength=strength,
         )
 
@@ -301,7 +303,7 @@ When resolving conflicts:
 - Favor more recent or more detailed information
 - Merge complementary information rather than replacing
 - Maintain entity and relationship integrity
-- Use confidence scores to guide decisions
+- Use importance scores to guide decisions
 - Explain your reasoning for each action
 
 CRITICAL: You MUST use the provided tools to resolve conflicts. Do NOT just analyze - actively call the tools:
@@ -362,7 +364,9 @@ def format_conflicts_as_text(conflicts: ConsolidationConflicts) -> str:
             lines.append("")
             lines.append("**Existing Chunks:**")
             for chunk in section.existing_chunks:
-                lines.append(f"- Chunk {chunk.id} (order {chunk.chunk_order}): {chunk.content}")
+                lines.append(
+                    f"- Chunk {chunk.id}: {chunk.content[:100]}{'...' if len(chunk.content) > 100 else ''}"
+                )
             lines.append("")
 
     # Entity conflicts
@@ -374,9 +378,9 @@ def format_conflicts_as_text(conflicts: ConsolidationConflicts) -> str:
             lines.append(f"- Shortterm Types: {entity.shortterm_types}")
             lines.append(f"- Active Types: {entity.active_types}")
             lines.append(f"- Merged Types: {entity.merged_types}")
-            lines.append(f"- Shortterm Confidence: {entity.shortterm_confidence}")
-            lines.append(f"- Active Confidence: {entity.active_confidence}")
-            lines.append(f"- Merged Confidence: {entity.merged_confidence}")
+            lines.append(f"- Shortterm Importance: {entity.shortterm_importance}")
+            lines.append(f"- Active Importance: {entity.active_importance}")
+            lines.append(f"- Merged Importance: {entity.merged_importance}")
             if entity.shortterm_description:
                 lines.append(f"- Shortterm Description: {entity.shortterm_description}")
             if entity.active_description:
@@ -394,9 +398,9 @@ def format_conflicts_as_text(conflicts: ConsolidationConflicts) -> str:
             lines.append(f"- Shortterm Types: {rel.shortterm_types}")
             lines.append(f"- Active Types: {rel.active_types}")
             lines.append(f"- Merged Types: {rel.merged_types}")
-            lines.append(f"- Shortterm Confidence: {rel.shortterm_confidence}")
-            lines.append(f"- Active Confidence: {rel.active_confidence}")
-            lines.append(f"- Merged Confidence: {rel.merged_confidence}")
+            lines.append(f"- Shortterm Importance: {rel.shortterm_importance}")
+            lines.append(f"- Active Importance: {rel.active_importance}")
+            lines.append(f"- Merged Importance: {rel.merged_importance}")
             lines.append(f"- Shortterm Strength: {rel.shortterm_strength}")
             lines.append(f"- Active Strength: {rel.active_strength}")
             lines.append(f"- Merged Strength: {rel.merged_strength}")
@@ -456,6 +460,24 @@ async def resolve_conflicts(
             f"{len(resolution.relationship_updates)} relationship updates"
         )
 
+        # Log usage summary
+        usage = result.usage()
+        log_usage_summary(usage, "memorizer")
+
+        # Save detailed logs to file
+        try:
+            saved_files = save_agent_run(
+                result=result,
+                agent_name="memorizer",
+                run_id=conflicts.external_id,
+                include_usage=True,
+                include_messages=True,
+            )
+            if saved_files["messages"]:
+                logger.info(f"Saved agent run logs to {saved_files['messages'].parent}")
+        except Exception as file_e:
+            logger.warning(f"Failed to save agent run logs: {file_e}", exc_info=True)
+
         return resolution
 
     except Exception as e:
@@ -465,116 +487,3 @@ async def resolve_conflicts(
         return ConflictResolution(
             summary=f"Error during conflict resolution: {str(e)}",
         )
-
-
-# =========================================================================
-# TEST MAIN FUNCTION
-# =========================================================================
-if __name__ == "__main__":
-    import asyncio
-    from dataclasses import dataclass
-
-    @dataclass
-    class MockChunk:
-        id: int
-        content: str
-
-    @dataclass
-    class MockEntity:
-        id: int
-
-    @dataclass
-    class MockRelationship:
-        id: int
-
-    async def main():
-        """Main function to test the memorizer agent."""
-        logging.basicConfig(level=logging.INFO)
-        logger.info("Testing Memorizer Agent")
-
-        # Get the agent
-        agent = _get_memorizer_agent()
-
-        # Create mock dependencies
-        class MockShorttermRepo:
-            async def update_chunk(self, chunk_id: int, content: str):
-                logger.info(f"[Mock] Updating chunk {chunk_id}")
-                return MockChunk(id=chunk_id, content=content)
-
-            async def create_chunk(
-                self,
-                shortterm_memory_id: int,
-                external_id: str,
-                content: str,
-                chunk_order: int,
-                section_id: str,
-                metadata: dict,
-            ):
-                logger.info(f"[Mock] Creating chunk")
-                return MockChunk(id=999, content=content)
-
-            async def update_entity(self, entity_id: int, **kwargs):
-                logger.info(f"[Mock] Updating entity {entity_id}")
-                return MockEntity(id=entity_id)
-
-            async def update_relationship(self, relationship_id: int, **kwargs):
-                logger.info(f"[Mock] Updating relationship {relationship_id}")
-                return MockRelationship(id=relationship_id)
-
-        deps = MemorizerDeps(
-            external_id="test-main",
-            active_memory_id=1,
-            shortterm_memory_id=1,
-            shortterm_repo=MockShorttermRepo(),
-        )
-
-        # Test the resolve_conflicts function directly
-        from agent_mem.database.models import (
-            ConflictSection,
-            ShorttermMemoryChunk,
-            ConflictEntityDetail,
-            ConflictRelationshipDetail,
-        )
-        import datetime
-
-        # 1. Create mock data
-        mock_conflicts = ConsolidationConflicts(
-            external_id="test-resolve-conflicts",
-            active_memory_id=1,
-            shortterm_memory_id=1,
-            created_at=datetime.datetime.now(),
-            total_conflicts=1,
-            sections=[
-                ConflictSection(
-                    section_id="summary",
-                    section_content="UPDATED: This is the new summary.",
-                    update_count=1,
-                    existing_chunks=[
-                        ShorttermMemoryChunk(
-                            id=1,
-                            shortterm_memory_id=1,
-                            content="This is the old summary.",
-                            chunk_order=0,
-                        )
-                    ],
-                )
-            ],
-        )
-
-        # 2. Call resolve_conflicts
-        logger.info("Testing resolve_conflicts function directly")
-        try:
-            resolution = await resolve_conflicts(
-                conflicts=mock_conflicts, shortterm_repo=MockShorttermRepo()
-            )
-
-            logger.info(f"Resolution summary: {resolution.summary}")
-            logger.info(
-                f"Actions: {len(resolution.chunk_updates)} chunk updates, "
-                f"{len(resolution.chunk_creates)} chunk creates"
-            )
-
-        except Exception as e:
-            logger.error(f"An error occurred during resolve_conflicts test: {e}", exc_info=True)
-
-    asyncio.run(main())

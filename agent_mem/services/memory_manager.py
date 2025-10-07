@@ -432,7 +432,7 @@ class MemoryManager:
             )
 
             logger.info(
-                f"Memory retrieval complete (confidence: {synthesis.confidence:.2f}): "
+                f"Memory retrieval complete (importance: {synthesis.importance:.2f}): "
                 f"{len(result.active_memories)} active, "
                 f"{len(shortterm_chunks)} shortterm, {len(longterm_chunks)} longterm"
             )
@@ -751,7 +751,6 @@ class MemoryManager:
                                 shortterm_memory_id=shortterm_memory.id,
                                 external_id=external_id,
                                 content=chunk_content,
-                                chunk_order=new_chunks_created + i,
                                 embedding=embedding,
                                 section_id=section_id,
                                 metadata={
@@ -862,8 +861,8 @@ class MemoryManager:
 
                     # Recalculate confidence (weighted average, favor higher)
                     merged_confidence = max(
-                        (shortterm_entity.confidence + active_confidence) / 2,
-                        shortterm_entity.confidence,
+                        (shortterm_entity.importance + active_confidence) / 2,
+                        shortterm_entity.importance,
                         active_confidence,
                     )
 
@@ -893,7 +892,7 @@ class MemoryManager:
                             shortterm_types=shortterm_entity.types,
                             active_types=active_types,
                             merged_types=merged_types,
-                            shortterm_confidence=shortterm_entity.confidence,
+                            shortterm_importance=shortterm_entity.importance,
                             active_confidence=active_confidence,
                             merged_confidence=merged_confidence,
                             shortterm_description=shortterm_entity.description,
@@ -916,7 +915,7 @@ class MemoryManager:
                             name=entity_name,
                             types=active_types,
                             description=active_description,
-                            confidence=active_confidence,
+                            importance=active_confidence,  # Using confidence as importance
                             metadata={},
                         )
 
@@ -955,7 +954,7 @@ class MemoryManager:
                 )
 
                 active_confidence = (
-                    active_rel.confidence if hasattr(active_rel, "confidence") else 0.5
+                    active_rel.importance if hasattr(active_rel, "confidence") else 0.5
                 )
                 active_strength = active_rel.strength if hasattr(active_rel, "strength") else 0.5
                 active_description = (
@@ -973,8 +972,8 @@ class MemoryManager:
 
                     # Recalculate confidence and strength
                     merged_confidence = max(
-                        (shortterm_rel.confidence + active_confidence) / 2,
-                        shortterm_rel.confidence,
+                        (shortterm_rel.importance + active_confidence) / 2,
+                        shortterm_rel.importance,
                         active_confidence,
                     )
 
@@ -1014,7 +1013,7 @@ class MemoryManager:
                             shortterm_types=shortterm_rel.types,
                             active_types=active_types,
                             merged_types=merged_types,
-                            shortterm_confidence=shortterm_rel.confidence,
+                            shortterm_importance=shortterm_rel.importance,
                             active_confidence=active_confidence,
                             merged_confidence=merged_confidence,
                             shortterm_strength=shortterm_rel.strength,
@@ -1049,7 +1048,7 @@ class MemoryManager:
                             to_entity_id=to_entity_obj.id,
                             types=active_types,
                             description=active_description,
-                            confidence=active_confidence,
+                            importance=active_confidence,  # Using confidence as importance
                             strength=active_strength,
                             metadata={},
                         )
@@ -1279,19 +1278,15 @@ class MemoryManager:
 
                         # Calculate scores
                         importance_score = chunk.metadata.get("importance_score", 0.75)
-                        confidence_score = 0.85
 
                         # Create longterm chunk with temporal tracking
                         longterm_chunk = await self.longterm_repo.create_chunk(
                             external_id=external_id,
                             shortterm_memory_id=shortterm_memory_id,
                             content=chunk.content,
-                            chunk_order=chunk.chunk_order,
                             embedding=embedding,
-                            confidence_score=confidence_score,
-                            importance_score=importance_score,
+                            importance=importance_score,
                             start_date=datetime.now(timezone.utc),
-                            end_date=None,  # Currently valid
                             metadata={
                                 **chunk.metadata,
                                 "promoted_from_shortterm": shortterm_memory_id,
@@ -1345,8 +1340,8 @@ class MemoryManager:
 
                         # Recalculate confidence (weighted average, favoring more confident value)
                         # Give 60% weight to higher confidence, 40% to lower
-                        max_conf = max(lt_match.confidence, st_entity.confidence)
-                        min_conf = min(lt_match.confidence, st_entity.confidence)
+                        max_conf = max(lt_match.importance, st_entity.importance)
+                        min_conf = min(lt_match.importance, st_entity.importance)
                         new_confidence = 0.6 * max_conf + 0.4 * min_conf
 
                         # Calculate importance
@@ -1360,7 +1355,7 @@ class MemoryManager:
                             "shortterm_memory_id": shortterm_memory_id,
                             "old_types": lt_match.types,
                             "new_types": merged_types,
-                            "old_confidence": lt_match.confidence,
+                            "old_importance": lt_match.importance,
                             "new_confidence": new_confidence,
                         }
 
@@ -1373,7 +1368,7 @@ class MemoryManager:
                         logger.debug(
                             f"Updating longterm entity: {st_entity.name} "
                             f"(types {lt_match.types} -> {merged_types}, "
-                            f"confidence {lt_match.confidence:.2f} -> {new_confidence:.2f})"
+                            f"importance {lt_match.importance:.2f} -> {new_confidence:.2f})"
                         )
 
                         # Prepare metadata update
@@ -1390,7 +1385,7 @@ class MemoryManager:
                             types=merged_types,
                             confidence=new_confidence,
                             importance=importance,
-                            last_seen=now,
+                            last_access=now,
                             metadata=updated_metadata,
                         )
 
@@ -1416,7 +1411,7 @@ class MemoryManager:
                                 "source": "shortterm_promotion",
                                 "shortterm_memory_id": shortterm_memory_id,
                                 "types": st_entity.types,
-                                "confidence": st_entity.confidence,
+                                "confidence": st_entity.importance,
                                 "action": "created",
                             }
                         ]
@@ -1426,7 +1421,6 @@ class MemoryManager:
                             name=st_entity.name,
                             types=st_entity.types,
                             description=st_entity.description or "",
-                            confidence=st_entity.confidence,
                             importance=importance,
                             metadata={
                                 **st_entity.metadata,
@@ -1502,13 +1496,13 @@ class MemoryManager:
                                     merged_types.append(st_type)
 
                             # Recalculate confidence (weighted average, favoring more confident value)
-                            max_conf = max(lt_match.confidence, st_rel.confidence)
-                            min_conf = min(lt_match.confidence, st_rel.confidence)
+                            max_conf = max(lt_match.importance, st_rel.importance)
+                            min_conf = min(lt_match.importance, st_rel.importance)
                             new_confidence = 0.6 * max_conf + 0.4 * min_conf
 
                             # Recalculate strength (weighted average, favoring stronger value)
-                            max_strength = max(lt_match.strength, st_rel.strength)
-                            min_strength = min(lt_match.strength, st_rel.strength)
+                            max_strength = max(lt_match.strength, st_rel.importance)
+                            min_strength = min(lt_match.strength, st_rel.importance)
                             new_strength = 0.6 * max_strength + 0.4 * min_strength
 
                             # Add state history entry to metadata
@@ -1519,7 +1513,7 @@ class MemoryManager:
                                 "shortterm_memory_id": shortterm_memory_id,
                                 "old_types": lt_match.types,
                                 "new_types": merged_types,
-                                "old_confidence": lt_match.confidence,
+                                "old_importance": lt_match.importance,
                                 "new_confidence": new_confidence,
                                 "old_strength": lt_match.strength,
                                 "new_strength": new_strength,
@@ -1534,7 +1528,7 @@ class MemoryManager:
                             logger.debug(
                                 f"Updating longterm relationship: {from_name} -> {to_name} "
                                 f"(types {lt_match.types} -> {merged_types}, "
-                                f"confidence {lt_match.confidence:.2f} -> {new_confidence:.2f}, "
+                                f"importance {lt_match.importance:.2f} -> {new_confidence:.2f}, "
                                 f"strength {lt_match.strength:.2f} -> {new_strength:.2f})"
                             )
 
@@ -1577,14 +1571,14 @@ class MemoryManager:
                                     "source": "shortterm_promotion",
                                     "shortterm_memory_id": shortterm_memory_id,
                                     "types": st_rel.types,
-                                    "confidence": st_rel.confidence,
-                                    "strength": st_rel.strength,
+                                    "confidence": st_rel.importance,
+                                    "strength": st_rel.importance,
                                     "action": "created",
                                 }
                             ]
 
                             # Calculate importance based on entity importance and relationship strength
-                            importance = st_rel.strength * 0.8 + st_rel.confidence * 0.2
+                            importance = st_rel.importance * 0.8 + st_rel.importance * 0.2
 
                             created_rel = await self.longterm_repo.create_relationship(
                                 external_id=external_id,
@@ -1592,8 +1586,7 @@ class MemoryManager:
                                 to_entity_id=to_lt_id,
                                 types=st_rel.types,
                                 description=st_rel.description or "",
-                                confidence=st_rel.confidence,
-                                strength=st_rel.strength,
+                                strength=st_rel.importance,
                                 importance=importance,
                                 metadata={
                                     **st_rel.metadata,

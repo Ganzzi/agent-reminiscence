@@ -11,8 +11,6 @@ from agent_mem.database.models import (
     ActiveMemory,
     ShorttermMemory,
     LongtermMemory,
-    Entity,
-    Relationship,
     RetrievalResult,
 )
 
@@ -23,7 +21,5 @@ __all__ = [
     "ActiveMemory",
     "ShorttermMemory",
     "LongtermMemory",
-    "Entity",
-    "Relationship",
     "RetrievalResult",
 ]

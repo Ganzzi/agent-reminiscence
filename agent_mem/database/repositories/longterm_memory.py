@@ -61,11 +61,9 @@ class LongtermMemoryRepository:
         self,
         external_id: str,
         content: str,
-        chunk_order: int,
         embedding: Optional[List[float]] = None,
         shortterm_memory_id: Optional[int] = None,
-        confidence_score: float = 0.5,
-        importance_score: float = 0.5,
+        importance: float = 0.5,
         start_date: Optional[datetime] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> LongtermMemoryChunk:
@@ -77,11 +75,9 @@ class LongtermMemoryRepository:
         Args:
             external_id: Agent identifier
             content: Chunk content
-            chunk_order: Order of chunk
             embedding: Optional embedding vector
             shortterm_memory_id: Source shortterm memory ID (optional)
-            confidence_score: Confidence in information accuracy (0-1)
-            importance_score: Importance for prioritization (0-1)
+            importance: Importance for prioritization (0-1)
             start_date: When information became valid (defaults to now)
             metadata: Optional metadata
 
@@ -90,12 +86,11 @@ class LongtermMemoryRepository:
         """
         query = """
             INSERT INTO longterm_memory_chunk 
-            (external_id, shortterm_memory_id, chunk_order, content, embedding, 
-             confidence_score, importance_score, start_date, last_updated, metadata)
+            (external_id, shortterm_memory_id, content, embedding, 
+             importance, start_date, last_updated, access_count, last_access, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id, external_id, shortterm_memory_id, chunk_order, content, 
-                      confidence_score, importance_score, start_date, end_date, 
-                      last_updated, metadata, created_at
+            RETURNING id, external_id, shortterm_memory_id, content, 
+                      importance, start_date, last_updated, access_count, last_access, metadata
         """
 
         # Convert embedding to PostgreSQL vector format if provided
@@ -111,13 +106,13 @@ class LongtermMemoryRepository:
                 [
                     external_id,
                     shortterm_memory_id,
-                    chunk_order,
                     content,
                     pg_vector,
-                    confidence_score,
-                    importance_score,
+                    importance,
                     start_date or current_time,
                     current_time,  # last_updated
+                    0,  # access_count
+                    None,  # last_access
                     metadata or {},
                 ],
             )
@@ -139,9 +134,8 @@ class LongtermMemoryRepository:
             LongtermMemoryChunk or None if not found
         """
         query = """
-            SELECT id, external_id, shortterm_memory_id, chunk_order, content, 
-                   confidence_score, importance_score, start_date, end_date, 
-                   metadata, created_at
+            SELECT id, external_id, shortterm_memory_id, content, 
+                   importance, start_date, last_updated, access_count, last_access, metadata
             FROM longterm_memory_chunk
             WHERE id = $1
         """
@@ -159,38 +153,31 @@ class LongtermMemoryRepository:
         self,
         external_id: str,
         limit: int = 100,
-        min_confidence: float = 0.0,
         min_importance: float = 0.0,
     ) -> List[LongtermMemoryChunk]:
         """
         Get all currently valid chunks for an external_id.
 
-        Valid chunks have end_date = NULL.
-
         Args:
             external_id: Agent identifier
             limit: Maximum number of chunks
-            min_confidence: Minimum confidence score
             min_importance: Minimum importance score
 
         Returns:
             List of LongtermMemoryChunk objects
         """
         query = """
-            SELECT id, external_id, shortterm_memory_id, chunk_order, content, 
-                   confidence_score, importance_score, start_date, end_date, 
-                   metadata, created_at
+            SELECT id, external_id, shortterm_memory_id, content, 
+                   importance, start_date, last_updated, access_count, last_access, metadata
             FROM longterm_memory_chunk
             WHERE external_id = $1 
-              AND end_date IS NULL
-              AND confidence_score >= $2
-              AND importance_score >= $3
-            ORDER BY importance_score DESC, confidence_score DESC, start_date DESC
-            LIMIT $4
+              AND importance >= $2
+            ORDER BY importance DESC, start_date DESC
+            LIMIT $3
         """
 
         async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [external_id, min_confidence, min_importance, limit])
+            result = await conn.execute(query, [external_id, min_importance, limit])
             rows = result.result()
 
             chunks = [self._chunk_row_to_model(row) for row in rows]
@@ -218,13 +205,12 @@ class LongtermMemoryRepository:
             List of LongtermMemoryChunk objects
         """
         query = """
-            SELECT id, external_id, shortterm_memory_id, chunk_order, content, 
-                   confidence_score, importance_score, start_date, end_date, 
-                   metadata, created_at
+            SELECT id, external_id, shortterm_memory_id, content, 
+                   importance, start_date, last_updated, access_count, last_access, metadata
             FROM longterm_memory_chunk
             WHERE external_id = $1 
+              AND start_date >= $2
               AND start_date <= $3
-              AND (end_date IS NULL OR end_date >= $2)
             ORDER BY start_date DESC
             LIMIT $4
         """
@@ -246,8 +232,7 @@ class LongtermMemoryRepository:
         chunk_id: int,
         content: Optional[str] = None,
         embedding: Optional[List[float]] = None,
-        confidence_score: Optional[float] = None,
-        importance_score: Optional[float] = None,
+        importance: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[LongtermMemoryChunk]:
         """
@@ -257,8 +242,7 @@ class LongtermMemoryRepository:
             chunk_id: Chunk ID
             content: New content (optional)
             embedding: New embedding (optional)
-            confidence_score: New confidence (optional)
-            importance_score: New importance (optional)
+            importance: New importance (optional)
             metadata: New metadata (optional)
 
         Returns:
@@ -279,14 +263,9 @@ class LongtermMemoryRepository:
             params.append(embedding_str)
             param_idx += 1
 
-        if confidence_score is not None:
-            updates.append(f"confidence_score = ${param_idx}")
-            params.append(confidence_score)
-            param_idx += 1
-
-        if importance_score is not None:
-            updates.append(f"importance_score = ${param_idx}")
-            params.append(importance_score)
+        if importance is not None:
+            updates.append(f"importance = ${param_idx}")
+            params.append(importance)
             param_idx += 1
 
         if metadata is not None:
@@ -297,15 +276,19 @@ class LongtermMemoryRepository:
         if not updates:
             return await self.get_chunk_by_id(chunk_id)
 
+        # Always update last_updated timestamp
+        updates.append(f"last_updated = ${param_idx}")
+        params.append(datetime.now(timezone.utc))
+        param_idx += 1
+
         params.append(chunk_id)
 
         query = f"""
             UPDATE longterm_memory_chunk
             SET {", ".join(updates)}
             WHERE id = ${param_idx}
-            RETURNING id, external_id, shortterm_memory_id, chunk_order, content, 
-                      confidence_score, importance_score, start_date, end_date, 
-                      metadata, created_at
+            RETURNING id, external_id, shortterm_memory_id, content, 
+                      importance, start_date, last_updated, access_count, last_access, metadata
         """
 
         async with self.postgres.connection() as conn:
@@ -321,25 +304,17 @@ class LongtermMemoryRepository:
 
     async def supersede_chunk(self, chunk_id: int, end_date: Optional[datetime] = None) -> bool:
         """
-        Mark a chunk as superseded by setting its end_date.
+        Mark a chunk as superseded by deleting it.
+        (Note: end_date parameter is kept for backwards compatibility but is not used)
 
         Args:
             chunk_id: Chunk ID
-            end_date: End date (defaults to now)
+            end_date: Deprecated parameter (not used)
 
         Returns:
-            True if updated, False if not found
+            True if deleted
         """
-        query = """
-            UPDATE longterm_memory_chunk
-            SET end_date = $2
-            WHERE id = $1 AND end_date IS NULL
-        """
-
-        async with self.postgres.connection() as conn:
-            await conn.execute(query, [chunk_id, end_date or datetime.now(timezone.utc)])
-            logger.info(f"Superseded longterm chunk {chunk_id}")
-            return True
+        return await self.delete_chunk(chunk_id)
 
     async def delete_chunk(self, chunk_id: int) -> bool:
         """
@@ -388,132 +363,6 @@ class LongtermMemoryRepository:
     # =========================================================================
     # SEARCH OPERATIONS
     # =========================================================================
-
-    async def vector_search(
-        self,
-        external_id: str,
-        query_embedding: List[float],
-        limit: int = 10,
-        min_similarity: float = 0.0,
-        min_confidence: float = 0.0,
-        min_importance: float = 0.0,
-        only_valid: bool = True,
-    ) -> List[LongtermMemoryChunk]:
-        """
-        Search chunks by vector similarity.
-
-        Args:
-            external_id: Agent identifier
-            query_embedding: Query embedding vector
-            limit: Maximum results
-            min_similarity: Minimum cosine similarity (0-1)
-            min_confidence: Minimum confidence score
-            min_importance: Minimum importance score
-            only_valid: Only return chunks with end_date = NULL
-
-        Returns:
-            List of LongtermMemoryChunk with similarity_score set
-        """
-        pg_vector = PgVector(query_embedding)
-
-        valid_clause = "AND end_date IS NULL" if only_valid else ""
-
-        query = f"""
-            SELECT 
-                id, external_id, shortterm_memory_id, chunk_order, content, 
-                confidence_score, importance_score, start_date, end_date, 
-                metadata, created_at,
-                1 - (embedding <=> $1) AS similarity
-            FROM longterm_memory_chunk
-            WHERE external_id = $2 
-              AND embedding IS NOT NULL
-              AND (1 - (embedding <=> $1)) >= $3
-              AND confidence_score >= $4
-              AND importance_score >= $5
-              {valid_clause}
-            ORDER BY embedding <=> $1
-            LIMIT $6
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(
-                query,
-                [
-                    pg_vector,
-                    external_id,
-                    min_similarity,
-                    min_confidence,
-                    min_importance,
-                    limit,
-                ],
-            )
-            rows = result.result()
-
-            chunks = []
-            for row in rows:
-                chunk = self._chunk_row_to_model(row[:11])
-                chunk.similarity_score = float(row[11])
-                chunks.append(chunk)
-
-            logger.debug(f"Vector search found {len(chunks)} longterm chunks for {external_id}")
-            return chunks
-
-    async def bm25_search(
-        self,
-        external_id: str,
-        query_text: str,
-        limit: int = 10,
-        min_confidence: float = 0.0,
-        min_importance: float = 0.0,
-        only_valid: bool = True,
-    ) -> List[LongtermMemoryChunk]:
-        """
-        Search chunks by BM25 keyword matching.
-
-        Args:
-            external_id: Agent identifier
-            query_text: Query text
-            limit: Maximum results
-            min_confidence: Minimum confidence score
-            min_importance: Minimum importance score
-            only_valid: Only return chunks with end_date = NULL
-
-        Returns:
-            List of LongtermMemoryChunk with bm25_score set
-        """
-        valid_clause = "AND end_date IS NULL" if only_valid else ""
-
-        query = f"""
-            SELECT 
-                id, external_id, shortterm_memory_id, chunk_order, content, 
-                confidence_score, importance_score, start_date, end_date, 
-                metadata, created_at,
-                content_bm25 <&> to_bm25query('idx_longterm_chunk_bm25', tokenize($1, 'bert')) AS score
-            FROM longterm_memory_chunk
-            WHERE external_id = $2
-              AND content_bm25 IS NOT NULL
-              AND confidence_score >= $3
-              AND importance_score >= $4
-              {valid_clause}
-            ORDER BY score DESC
-            LIMIT $5
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(
-                query, [query_text, external_id, min_confidence, min_importance, limit]
-            )
-            rows = result.result()
-
-            chunks = []
-            for row in rows:
-                chunk = self._chunk_row_to_model(row[:11])
-                chunk.bm25_score = float(row[11]) if row[11] is not None else 0.0
-                chunks.append(chunk)
-
-            logger.debug(f"BM25 search found {len(chunks)} longterm chunks for {external_id}")
-            return chunks
-
     async def hybrid_search(
         self,
         external_id: str,
@@ -522,7 +371,6 @@ class LongtermMemoryRepository:
         limit: int = 10,
         vector_weight: float = 0.5,
         bm25_weight: float = 0.5,
-        min_confidence: float = 0.0,
         min_importance: float = 0.0,
         only_valid: bool = True,
     ) -> List[LongtermMemoryChunk]:
@@ -536,15 +384,13 @@ class LongtermMemoryRepository:
             limit: Maximum results
             vector_weight: Weight for vector similarity (0-1)
             bm25_weight: Weight for BM25 score (0-1)
-            min_confidence: Minimum confidence score
             min_importance: Minimum importance score
-            only_valid: Only return chunks with end_date = NULL
+            only_valid: Kept for backwards compatibility (not used)
 
         Returns:
             List of LongtermMemoryChunk with combined scores
         """
         pg_vector = PgVector(query_embedding)
-        valid_clause = "AND c.end_date IS NULL" if only_valid else ""
 
         query = f"""
             WITH vector_results AS (
@@ -562,8 +408,8 @@ class LongtermMemoryRepository:
                 WHERE external_id = $2 AND content_bm25 IS NOT NULL
             )
             SELECT 
-                c.id, c.external_id, c.shortterm_memory_id, c.chunk_order, c.content, 
-                c.confidence_score, c.importance_score, c.start_date, c.end_date, 
+                c.id, c.external_id, c.shortterm_memory_id, c.content, 
+                c.importance, c.start_date, c.last_updated, c.access_count, c.last_access,
                 c.metadata, c.created_at,
                 COALESCE(v.vector_score, 0) * $4 + COALESCE(b.bm25_score, 0) * $5 AS combined_score
             FROM longterm_memory_chunk c
@@ -571,11 +417,9 @@ class LongtermMemoryRepository:
             LEFT JOIN bm25_results b ON c.id = b.id
             WHERE c.external_id = $2
               AND (v.vector_score IS NOT NULL OR b.bm25_score IS NOT NULL)
-              AND c.confidence_score >= $6
-              AND c.importance_score >= $7
-              {valid_clause}
+              AND c.importance >= $6
             ORDER BY combined_score DESC
-            LIMIT $8
+            LIMIT $7
         """
 
         async with self.postgres.connection() as conn:
@@ -587,7 +431,6 @@ class LongtermMemoryRepository:
                     query_text,
                     vector_weight,
                     bm25_weight,
-                    min_confidence,
                     min_importance,
                     limit,
                 ],
@@ -613,7 +456,6 @@ class LongtermMemoryRepository:
         name: str,
         types: List[str],
         description: Optional[str] = None,
-        confidence: float = 0.5,
         importance: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> LongtermEntity:
@@ -625,7 +467,6 @@ class LongtermMemoryRepository:
             name: Entity name
             types: Entity types (e.g., ['Person', 'Developer'], ['Technology', 'Tool'])
             description: Optional description
-            confidence: Confidence score (0-1)
             importance: Importance score (0-1)
             metadata: Optional metadata
 
@@ -640,15 +481,15 @@ class LongtermMemoryRepository:
             name: $name,
             types: $types,
             description: $description,
-            confidence: $confidence,
             importance: $importance,
+            access_count: $access_count,
             start_date: $now,
             last_updated: $now,
-            metadata: $metadata_json_json
+            metadata: $metadata_json
         })
         RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
                e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.importance AS importance,
+               e.importance AS importance, e.access_count AS access_count,
                e.start_date AS start_date, e.last_updated AS last_updated,
                e.metadata AS metadata
         """
@@ -660,8 +501,8 @@ class LongtermMemoryRepository:
                 name=name,
                 types=types,
                 description=description,
-                confidence=confidence,
                 importance=importance,
+                access_count=0,
                 now=now,
                 metadata_json=json.dumps(metadata or {}),
             )
@@ -673,8 +514,8 @@ class LongtermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
                 importance=record["importance"],
+                access_count=record["access_count"] or 0,
                 start_date=_convert_neo4j_datetime(record["start_date"]),
                 last_updated=_convert_neo4j_datetime(record["last_updated"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
@@ -698,8 +539,7 @@ class LongtermMemoryRepository:
         WHERE id(e) = $entity_id
         RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
                e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.importance AS importance,
-               e.start_date AS start_date, e.last_updated AS last_updated,
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access,
                e.metadata AS metadata
         """
 
@@ -716,17 +556,15 @@ class LongtermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
                 importance=record["importance"],
-                start_date=_convert_neo4j_datetime(record["start_date"]),
-                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
     async def get_entities_by_external_id(
         self,
         external_id: str,
-        min_confidence: float = 0.0,
         min_importance: float = 0.0,
     ) -> List[LongtermEntity]:
         """
@@ -734,7 +572,6 @@ class LongtermMemoryRepository:
 
         Args:
             external_id: Agent identifier
-            min_confidence: Minimum confidence score filter
             min_importance: Minimum importance score filter
 
         Returns:
@@ -742,20 +579,18 @@ class LongtermMemoryRepository:
         """
         query = """
         MATCH (e:LongtermEntity {external_id: $external_id})
-        WHERE e.confidence >= $min_confidence AND e.importance >= $min_importance
+        WHERE e.importance >= $min_importance
         RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
                e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.importance AS importance,
-               e.start_date AS start_date, e.last_updated AS last_updated,
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access,
                e.metadata AS metadata
-        ORDER BY e.importance DESC, e.confidence DESC
+        ORDER BY e.importance DESC
         """
 
         async with self.neo4j.session() as session:
             result = await session.run(
                 query,
                 external_id=external_id,
-                min_confidence=min_confidence,
                 min_importance=min_importance,
             )
             records = [record async for record in result]
@@ -767,10 +602,9 @@ class LongtermMemoryRepository:
                     name=record["name"],
                     types=record["types"] or [],
                     description=record["description"],
-                    confidence=record["confidence"],
                     importance=record["importance"],
-                    start_date=_convert_neo4j_datetime(record["start_date"]),
-                    last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                    access_count=record["access_count"] or 0,
+                    last_access=_convert_neo4j_datetime(record["last_access"]),
                     metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
@@ -820,7 +654,7 @@ class LongtermMemoryRepository:
             params["description"] = description
 
         if confidence is not None:
-            updates.append("e.confidence = $confidence")
+            updates.append("e.importance = $confidence")
             params["confidence"] = confidence
 
         if importance is not None:
@@ -842,8 +676,7 @@ class LongtermMemoryRepository:
         SET {", ".join(updates)}
         RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
                e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.importance AS importance,
-               e.start_date AS start_date, e.last_updated AS last_updated,
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access,
                e.metadata AS metadata
         """
 
@@ -860,10 +693,9 @@ class LongtermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
                 importance=record["importance"],
-                start_date=_convert_neo4j_datetime(record["start_date"]),
-                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
@@ -873,21 +705,19 @@ class LongtermMemoryRepository:
     async def update_entity_with_metadata(
         self,
         entity_id: int,
-        confidence: Optional[float] = None,
         importance: Optional[float] = None,
-        last_seen: Optional[datetime] = None,
+        last_access: Optional[datetime] = None,
         metadata_update: Optional[Dict[str, Any]] = None,
     ) -> Optional[LongtermEntity]:
         """
         Update entity and merge metadata updates array.
 
-        Used during promotion to track confidence/importance changes over time.
+        Used during promotion to track importance changes over time.
 
         Args:
             entity_id: Entity node ID
-            confidence: New confidence score
             importance: New importance score
-            last_seen: Last seen timestamp
+            last_access: Last access timestamp
             metadata_update: Dict with updates to merge (e.g., {"updates": [...]})
 
         Returns:
@@ -896,17 +726,13 @@ class LongtermMemoryRepository:
         updates = []
         params = {"entity_id": entity_id, "now": datetime.now(timezone.utc)}
 
-        if confidence is not None:
-            updates.append("e.confidence = $confidence")
-            params["confidence"] = confidence
-
         if importance is not None:
             updates.append("e.importance = $importance")
             params["importance"] = importance
 
-        if last_seen is not None:
-            updates.append("e.last_seen = $last_seen")
-            params["last_seen"] = last_seen
+        if last_access is not None:
+            updates.append("e.last_access = $last_access")
+            params["last_access"] = last_access
 
         updates.append("e.last_updated = $now")
 
@@ -923,9 +749,8 @@ class LongtermMemoryRepository:
         SET {", ".join(updates)}
         RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
                e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.importance AS importance,
-               e.start_date AS start_date, e.last_updated AS last_updated,
-               e.metadata AS metadata
+               e.importance AS importance, e.access_count AS access_count,
+               e.last_access AS last_access, e.metadata AS metadata
         """
 
         async with self.neo4j.session() as session:
@@ -941,10 +766,9 @@ class LongtermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
                 importance=record["importance"],
-                start_date=_convert_neo4j_datetime(record["start_date"]),
-                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
@@ -983,7 +807,6 @@ class LongtermMemoryRepository:
         to_entity_id: int,
         types: List[str],
         description: Optional[str] = None,
-        confidence: float = 0.5,
         strength: float = 0.5,
         importance: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
@@ -997,7 +820,6 @@ class LongtermMemoryRepository:
             to_entity_id: Target entity node ID
             types: Relationship types (e.g., ['USES', 'DEPENDS_ON'])
             description: Optional description
-            confidence: Confidence score (0-1)
             strength: Relationship strength (0-1)
             importance: Importance score (0-1)
             metadata: Optional metadata
@@ -1019,9 +841,9 @@ class LongtermMemoryRepository:
             external_id: $external_id,
             types: $types,
             description: $description,
-            confidence: $confidence,
             strength: $strength,
             importance: $importance,
+            access_count: $access_count,
             start_date: $now,
             last_updated: $now,
             metadata: $metadata_json
@@ -1030,8 +852,7 @@ class LongtermMemoryRepository:
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.importance AS importance,
+               r.importance AS strength, r.importance AS importance, r.access_count AS access_count,
                r.start_date AS start_date, r.last_updated AS last_updated,
                r.metadata AS metadata
         """
@@ -1044,9 +865,9 @@ class LongtermMemoryRepository:
                 to_entity_id=to_entity_id,
                 types=types,
                 description=description,
-                confidence=confidence,
                 strength=strength,
                 importance=importance,
+                access_count=0,
                 now=now,
                 metadata_json=json.dumps(metadata or {}),
             )
@@ -1061,9 +882,9 @@ class LongtermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
                 strength=record["strength"],
                 importance=record["importance"],
+                access_count=record["access_count"] or 0,
                 start_date=_convert_neo4j_datetime(record["start_date"]),
                 last_updated=_convert_neo4j_datetime(record["last_updated"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
@@ -1092,9 +913,7 @@ class LongtermMemoryRepository:
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.importance AS importance,
-               r.start_date AS start_date, r.last_updated AS last_updated,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
         """
 
@@ -1114,18 +933,15 @@ class LongtermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                strength=record["strength"],
                 importance=record["importance"],
-                start_date=_convert_neo4j_datetime(record["start_date"]),
-                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
     async def get_relationships_by_external_id(
         self,
         external_id: str,
-        min_confidence: float = 0.0,
         min_importance: float = 0.0,
     ) -> List[LongtermRelationship]:
         """
@@ -1133,7 +949,6 @@ class LongtermMemoryRepository:
 
         Args:
             external_id: Agent identifier
-            min_confidence: Minimum confidence score filter
             min_importance: Minimum importance score filter
 
         Returns:
@@ -1141,23 +956,20 @@ class LongtermMemoryRepository:
         """
         query = """
         MATCH (from:LongtermEntity)-[r:LONGTERM_RELATES {external_id: $external_id}]->(to:LongtermEntity)
-        WHERE r.confidence >= $min_confidence AND r.importance >= $min_importance
+        WHERE r.importance >= $min_importance
         RETURN elementId(r) AS id, r.external_id AS external_id,
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.importance AS importance,
-               r.start_date AS start_date, r.last_updated AS last_updated,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
-        ORDER BY r.importance DESC, r.strength DESC, r.confidence DESC
+        ORDER BY r.importance DESC
         """
 
         async with self.neo4j.session() as session:
             result = await session.run(
                 query,
                 external_id=external_id,
-                min_confidence=min_confidence,
                 min_importance=min_importance,
             )
             records = [record async for record in result]
@@ -1172,11 +984,9 @@ class LongtermMemoryRepository:
                     to_entity_name=record["to_entity_name"],
                     types=record["types"] or [],
                     description=record["description"],
-                    confidence=record["confidence"],
-                    strength=record["strength"],
                     importance=record["importance"],
-                    start_date=_convert_neo4j_datetime(record["start_date"]),
-                    last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                    access_count=record["access_count"] or 0,
+                    last_access=_convert_neo4j_datetime(record["last_access"]),
                     metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
@@ -1222,11 +1032,11 @@ class LongtermMemoryRepository:
             params["description"] = description
 
         if confidence is not None:
-            updates.append("r.confidence = $confidence")
+            updates.append("r.importance = $confidence")
             params["confidence"] = confidence
 
         if strength is not None:
-            updates.append("r.strength = $strength")
+            updates.append("r.importance = $strength")
             params["strength"] = strength
 
         if importance is not None:
@@ -1250,9 +1060,7 @@ class LongtermMemoryRepository:
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.importance AS importance,
-               r.start_date AS start_date, r.last_updated AS last_updated,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
         """
 
@@ -1272,11 +1080,9 @@ class LongtermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                strength=record["strength"],
                 importance=record["importance"],
-                start_date=_convert_neo4j_datetime(record["start_date"]),
-                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
@@ -1314,10 +1120,11 @@ class LongtermMemoryRepository:
             id=row[0],
             external_id=row[1],
             shortterm_memory_id=row[2],
-            chunk_order=row[3],
-            content=row[4],
-            confidence_score=float(row[5]),
-            start_date=row[7],
-            end_date=row[8],
+            content=row[3],
+            importance=float(row[4]),
+            start_date=row[5],
+            last_updated=row[6],
+            access_count=int(row[7]) if row[7] is not None else 0,
+            last_access=row[8],
             metadata=row[9] if isinstance(row[9], dict) else {},
         )

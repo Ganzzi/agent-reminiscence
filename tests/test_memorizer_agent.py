@@ -70,70 +70,59 @@ def mock_shortterm_repo():
         id=2,
         shortterm_memory_id=100,
         content="New chunk content created by memorizer agent.",
-        chunk_order=1,
         section_id="code_examples",
         metadata={"source": "memorizer_agent"},
     )
 
     # Mock entity operations
     repo.get_entity.return_value = ShorttermEntity(
-        id=1,
+        id="1",
         external_id="test-agent",
         shortterm_memory_id=100,
         name="Python",
         types=["programming_language", "technology"],
         description="A high-level programming language",
-        confidence=0.9,
-        first_seen=datetime.now(timezone.utc),
-        last_seen=datetime.now(timezone.utc),
+        importance=0.9,
         metadata={},
     )
 
     repo.update_entity.return_value = ShorttermEntity(
-        id=1,
+        id="1",
         external_id="test-agent",
         shortterm_memory_id=100,
         name="Python",
         types=["programming_language", "technology", "interpreted"],
         description="A high-level, interpreted programming language",
-        confidence=0.95,
-        first_seen=datetime.now(timezone.utc),
-        last_seen=datetime.now(timezone.utc),
+        importance=0.95,
         metadata={},
     )
 
     # Mock relationship operations
     repo.get_relationship.return_value = ShorttermRelationship(
-        id=1,
+        id="1",
         external_id="test-agent",
         shortterm_memory_id=100,
-        from_entity_id=1,
-        to_entity_id=2,
+        from_entity_id="1",
+        to_entity_id="2",
         from_entity_name="Python",
         to_entity_name="Django",
         types=["uses", "framework"],
         description="Django is a Python web framework",
-        confidence=0.85,
-        strength=0.8,
-        first_observed=datetime.now(timezone.utc),
-        last_observed=datetime.now(timezone.utc),
+        importance=0.85,
         metadata={},
     )
 
     repo.update_relationship.return_value = ShorttermRelationship(
-        id=1,
+        id="1",
         external_id="test-agent",
         shortterm_memory_id=100,
-        from_entity_id=1,
-        to_entity_id=2,
+        from_entity_id="1",
+        to_entity_id="2",
         from_entity_name="Python",
         to_entity_name="Django",
         types=["uses", "framework", "web_development"],
         description="Django is a popular Python web framework",
-        confidence=0.9,
-        strength=0.85,
-        first_observed=datetime.now(timezone.utc),
-        last_observed=datetime.now(timezone.utc),
+        importance=0.9,
         metadata={},
     )
 
@@ -149,7 +138,6 @@ def sample_conflicts():
             id=1,
             shortterm_memory_id=100,
             content="Python is a programming language. It is widely used.",
-            chunk_order=0,
             section_id="overview",
             metadata={},
         ),
@@ -157,7 +145,6 @@ def sample_conflicts():
             id=2,
             shortterm_memory_id=100,
             content="Python has a simple syntax and is easy to learn.",
-            chunk_order=1,
             section_id="overview",
             metadata={},
         ),
@@ -186,9 +173,9 @@ def sample_conflicts():
                 shortterm_types=["programming_language"],
                 active_types=["programming_language", "interpreted"],
                 merged_types=["programming_language", "interpreted"],
-                shortterm_confidence=0.8,
-                active_confidence=0.9,
-                merged_confidence=0.85,
+                shortterm_importance=0.8,
+                active_importance=0.9,
+                merged_importance=0.85,
                 shortterm_description="A programming language",
                 active_description="A high-level, interpreted programming language",
                 merged_description="A high-level, interpreted programming language",
@@ -201,9 +188,9 @@ def sample_conflicts():
                 shortterm_types=["uses"],
                 active_types=["uses", "framework"],
                 merged_types=["uses", "framework"],
-                shortterm_confidence=0.75,
-                active_confidence=0.85,
-                merged_confidence=0.8,
+                shortterm_importance=0.75,
+                active_importance=0.85,
+                merged_importance=0.8,
                 shortterm_strength=0.7,
                 active_strength=0.8,
                 merged_strength=0.75,
@@ -261,7 +248,7 @@ def test_format_conflicts_as_text_with_entities(sample_conflicts):
     assert "### Entity 1: Python" in text
     assert "Shortterm Types: ['programming_language']" in text
     assert "Active Types: ['programming_language', 'interpreted']" in text
-    assert "Merged Confidence: 0.85" in text
+    assert "Merged Importance: 0.85" in text
 
 
 def test_format_conflicts_as_text_with_relationships(sample_conflicts):
@@ -440,7 +427,7 @@ async def test_entity_operations_via_tools(mock_shortterm_repo):
         types=["programming_language", "technology", "interpreted"],
         confidence=0.95,
     )
-    assert updated.confidence == 0.95
+    assert updated.importance == 0.95
     assert "interpreted" in updated.types
 
 
@@ -458,7 +445,7 @@ async def test_relationship_operations_via_tools(mock_shortterm_repo):
         types=["uses", "framework", "web_development"],
         confidence=0.9,
     )
-    assert updated.confidence == 0.9
+    assert updated.importance == 0.9
     assert "web_development" in updated.types
 
 
@@ -489,7 +476,7 @@ def test_sample_conflict_entity_details(sample_conflicts):
     """Test entity conflict details."""
     entity = sample_conflicts.entity_conflicts[0]
     assert entity.name == "Python"
-    assert entity.merged_confidence > entity.shortterm_confidence
+    assert entity.merged_importance > entity.shortterm_importance
     assert len(entity.merged_types) >= len(entity.active_types)
 
 

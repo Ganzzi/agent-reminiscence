@@ -81,7 +81,7 @@ class ShorttermMemoryRepository:
             INSERT INTO shortterm_memory 
             (external_id, title, summary, metadata)
             VALUES ($1, $2, $3, $4)
-            RETURNING id, external_id, title, summary, metadata, 
+            RETURNING id, external_id, title, summary, update_count, metadata, 
                       created_at, last_updated
         """
 
@@ -202,7 +202,7 @@ class ShorttermMemoryRepository:
             UPDATE shortterm_memory
             SET {", ".join(updates)}
             WHERE id = ${param_idx}
-            RETURNING id, external_id, title, summary, metadata, 
+            RETURNING id, external_id, title, summary, update_count, metadata, 
                       created_at, last_updated
         """
 
@@ -243,7 +243,6 @@ class ShorttermMemoryRepository:
         shortterm_memory_id: int,
         external_id: str,
         content: str,
-        chunk_order: int,
         embedding: Optional[List[float]] = None,
         section_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -257,7 +256,6 @@ class ShorttermMemoryRepository:
             shortterm_memory_id: Parent memory ID
             external_id: Agent identifier
             content: Chunk content
-            chunk_order: Order of chunk in memory
             embedding: Optional embedding vector
             section_id: Optional section reference from active memory
             metadata: Optional metadata
@@ -267,10 +265,9 @@ class ShorttermMemoryRepository:
         """
         query = """
             INSERT INTO shortterm_memory_chunk 
-            (shortterm_memory_id, external_id, content, chunk_order, embedding, section_id, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, shortterm_memory_id, external_id, content, chunk_order, 
-                      section_id, metadata, created_at
+            (shortterm_memory_id, external_id, content, embedding, section_id, metadata, access_count, last_access)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, shortterm_memory_id, content, section_id, metadata, access_count, last_access
         """
 
         # Convert embedding to PostgreSQL vector format if provided
@@ -285,10 +282,11 @@ class ShorttermMemoryRepository:
                     shortterm_memory_id,
                     external_id,
                     content,
-                    chunk_order,
                     pg_vector,
                     section_id,
                     metadata or {},
+                    0,  # access_count
+                    None,  # last_access
                 ],
             )
 
@@ -317,8 +315,8 @@ class ShorttermMemoryRepository:
             ShorttermMemoryChunk or None if not found
         """
         query = """
-            SELECT id, shortterm_memory_id, external_id, content, chunk_order, 
-                   metadata, created_at
+            SELECT id, shortterm_memory_id, external_id, content, 
+                   section_id, metadata, access_count, last_access, created_at
             FROM shortterm_memory_chunk
             WHERE id = $1
         """
@@ -334,7 +332,7 @@ class ShorttermMemoryRepository:
 
     async def get_chunks_by_memory_id(self, shortterm_memory_id: int) -> List[ShorttermMemoryChunk]:
         """
-        Get all chunks for a memory, ordered by chunk_order.
+        Get all chunks for a memory.
 
         Args:
             shortterm_memory_id: Memory ID
@@ -343,11 +341,11 @@ class ShorttermMemoryRepository:
             List of ShorttermMemoryChunk objects
         """
         query = """
-            SELECT id, shortterm_memory_id, external_id, content, chunk_order, 
-                   metadata, created_at
+            SELECT id, shortterm_memory_id, external_id, content, 
+                   section_id, metadata, access_count, last_access, created_at
             FROM shortterm_memory_chunk
             WHERE shortterm_memory_id = $1
-            ORDER BY chunk_order ASC
+            ORDER BY id ASC
         """
 
         async with self.postgres.connection() as conn:
@@ -409,7 +407,7 @@ class ShorttermMemoryRepository:
             UPDATE shortterm_memory_chunk
             SET {", ".join(updates)}
             WHERE id = ${param_idx}
-            RETURNING id, shortterm_memory_id, external_id, content, chunk_order, 
+            RETURNING id, shortterm_memory_id, external_id, content, 
                       metadata, created_at
         """
 
@@ -457,11 +455,11 @@ class ShorttermMemoryRepository:
             List of chunks referencing this section
         """
         query = """
-            SELECT id, shortterm_memory_id, external_id, content, chunk_order,
+            SELECT id, shortterm_memory_id, external_id, content,
                    section_id, metadata, created_at
             FROM shortterm_memory_chunk
             WHERE shortterm_memory_id = $1 AND section_id = $2
-            ORDER BY chunk_order
+            ORDER BY id
         """
 
         async with self.postgres.connection() as conn:
@@ -511,7 +509,7 @@ class ShorttermMemoryRepository:
             )
             return memory
 
-    async def reset_update_count(self, memory_id: int) -> bool:
+    async def reset_update_count(self, memory_id: int) -> Optional[ShorttermMemory]:
         """
         Reset update_count to 0 for a shortterm memory.
 
@@ -521,21 +519,28 @@ class ShorttermMemoryRepository:
             memory_id: Memory ID
 
         Returns:
-            True if successful, False if not found
+            Updated ShorttermMemory or None if not found
         """
         query = """
             UPDATE shortterm_memory
             SET update_count = 0,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = $1
+            RETURNING id, external_id, title, summary, update_count, metadata,
+                      created_at
         """
 
         async with self.postgres.connection() as conn:
             result = await conn.execute(query, [memory_id])
-            if result.result():
-                logger.info(f"Reset update_count for shortterm memory {memory_id}")
-                return True
-            return False
+            rows = result.result()
+
+            if not rows:
+                logger.warning(f"Shortterm memory {memory_id} not found")
+                return None
+
+            memory = self._memory_row_to_model(rows[0])
+            logger.info(f"Reset update_count for shortterm memory {memory_id}")
+            return memory
 
     async def delete_all_chunks(self, memory_id: int) -> int:
         """
@@ -564,96 +569,6 @@ class ShorttermMemoryRepository:
     # =========================================================================
     # SEARCH OPERATIONS
     # =========================================================================
-
-    async def vector_search(
-        self,
-        external_id: str,
-        query_embedding: List[float],
-        limit: int = 10,
-        min_similarity: float = 0.0,
-    ) -> List[ShorttermMemoryChunk]:
-        """
-        Search chunks by vector similarity.
-
-        Args:
-            external_id: Agent identifier
-            query_embedding: Query embedding vector
-            limit: Maximum results
-            min_similarity: Minimum cosine similarity (0-1)
-
-        Returns:
-            List of ShorttermMemoryChunk with similarity_score set
-        """
-        pg_vector = PgVector(query_embedding)
-
-        query = """
-            SELECT 
-                id, shortterm_memory_id, external_id, content, chunk_order, 
-                metadata, created_at,
-                1 - (embedding <=> $1) AS similarity
-            FROM shortterm_memory_chunk
-            WHERE external_id = $2 
-              AND embedding IS NOT NULL
-              AND (1 - (embedding <=> $1)) >= $3
-            ORDER BY embedding <=> $1
-            LIMIT $4
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [pg_vector, external_id, min_similarity, limit])
-            rows = result.result()
-
-            chunks = []
-            for row in rows:
-                chunk = self._chunk_row_to_model(row[:7])
-                chunk.similarity_score = float(row[7])
-                chunks.append(chunk)
-
-            logger.debug(f"Vector search found {len(chunks)} chunks for {external_id}")
-            return chunks
-
-    async def bm25_search(
-        self,
-        external_id: str,
-        query_text: str,
-        limit: int = 10,
-    ) -> List[ShorttermMemoryChunk]:
-        """
-        Search chunks by BM25 keyword matching.
-
-        Args:
-            external_id: Agent identifier
-            query_text: Query text
-            limit: Maximum results
-
-        Returns:
-            List of ShorttermMemoryChunk with bm25_score set
-        """
-        query = """
-            SELECT 
-                id, shortterm_memory_id, external_id, content, chunk_order, 
-                metadata, created_at,
-                content_bm25 <&> to_bm25query('idx_shortterm_chunk_bm25', tokenize($1, 'bert')) AS score
-            FROM shortterm_memory_chunk
-            WHERE external_id = $2
-              AND content_bm25 IS NOT NULL
-            ORDER BY score DESC
-            LIMIT $3
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [query_text, external_id, limit])
-            rows = result.result()
-
-            chunks = []
-            for row in rows:
-                chunk = self._chunk_row_to_model(row[:7])
-                chunk.bm25_score = float(row[7]) if row[7] is not None else 0.0
-                chunks.append(chunk)
-
-            logger.debug(f"BM25 search found {len(chunks)} chunks for {external_id}")
-            return chunks
-
     async def hybrid_search(
         self,
         external_id: str,
@@ -695,8 +610,7 @@ class ShorttermMemoryRepository:
                 WHERE external_id = $2 AND content_bm25 IS NOT NULL
             )
             SELECT 
-                c.id, c.shortterm_memory_id, c.external_id, c.content, c.chunk_order, 
-                c.metadata, c.created_at,
+                c.id, c.shortterm_memory_id, c.external_id, c.content, c.metadata, c.created_at,
                 COALESCE(v.vector_score, 0) * $4 + COALESCE(b.bm25_score, 0) * $5 AS combined_score
             FROM shortterm_memory_chunk c
             LEFT JOIN vector_results v ON c.id = v.id
@@ -736,7 +650,6 @@ class ShorttermMemoryRepository:
                             "shortterm_memory_id": row["shortterm_memory_id"],
                             "external_id": row["external_id"],
                             "content": row["content"],
-                            "chunk_order": row["chunk_order"],
                             "section_id": row.get("section_id"),
                             "metadata": row["metadata"],
                             "created_at": row["created_at"],
@@ -766,7 +679,7 @@ class ShorttermMemoryRepository:
         name: str,
         types: List[str],  # Changed from entity_type: str to types: List[str]
         description: Optional[str] = None,
-        confidence: float = 0.5,
+        importance: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ShorttermEntity:
         """
@@ -778,7 +691,7 @@ class ShorttermMemoryRepository:
             name: Entity name
             types: Entity types (e.g., ['Person', 'Developer'])
             description: Optional description
-            confidence: Confidence score (0-1)
+            importance: Importance score (0-1)
             metadata: Optional metadata
 
         Returns:
@@ -796,15 +709,15 @@ class ShorttermMemoryRepository:
             name: $name,
             types: $types,
             description: $description,
-            confidence: $confidence,
-            first_seen: $now,
-            last_seen: $now,
+            importance: $importance,
+            access_count: $access_count,
+            last_access: $last_access,
             metadata: $metadata_json
         })
         RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
                e.name AS name, e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.first_seen AS first_seen, 
-               e.last_seen AS last_seen, e.metadata AS metadata
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access, 
+               e.metadata AS metadata
         """
 
         async with self.neo4j.session() as session:
@@ -815,8 +728,9 @@ class ShorttermMemoryRepository:
                 name=name,
                 types=types,
                 description=description,
-                confidence=confidence,
-                now=now,
+                importance=importance,
+                access_count=0,
+                last_access=None,
                 metadata_json=metadata_json,
             )
             record = await result.single()
@@ -831,9 +745,9 @@ class ShorttermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                first_seen=_convert_neo4j_datetime(record["first_seen"]),
-                last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                importance=record["importance"],
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=metadata_dict,
             )
 
@@ -855,8 +769,8 @@ class ShorttermMemoryRepository:
         WHERE elementId(e) = $entity_id
         RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
                e.name AS name, e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.first_seen AS first_seen, 
-               e.last_seen AS last_seen, e.metadata AS metadata
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access, 
+               e.metadata AS metadata
         """
 
         async with self.neo4j.session() as session:
@@ -876,9 +790,9 @@ class ShorttermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                first_seen=_convert_neo4j_datetime(record["first_seen"]),
-                last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                importance=record["importance"],
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=metadata_dict,
             )
 
@@ -896,9 +810,9 @@ class ShorttermMemoryRepository:
         MATCH (e:ShorttermEntity {shortterm_memory_id: $shortterm_memory_id})
         RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
                e.name AS name, e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.first_seen AS first_seen, 
-               e.last_seen AS last_seen, e.metadata AS metadata
-        ORDER BY e.confidence DESC
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access, 
+               e.metadata AS metadata
+        ORDER BY e.importance DESC
         """
 
         async with self.neo4j.session() as session:
@@ -914,9 +828,9 @@ class ShorttermMemoryRepository:
                     name=record["name"],
                     types=record["types"] or [],
                     description=record["description"],
-                    confidence=record["confidence"],
-                    first_seen=_convert_neo4j_datetime(record["first_seen"]),
-                    last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                    importance=record["importance"],
+                    access_count=record["access_count"] or 0,
+                    last_access=_convert_neo4j_datetime(record["last_access"]),
                     metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
@@ -933,7 +847,7 @@ class ShorttermMemoryRepository:
         name: Optional[str] = None,
         types: Optional[List[str]] = None,  # Added types parameter
         description: Optional[str] = None,
-        confidence: Optional[float] = None,
+        importance: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[ShorttermEntity]:
         """
@@ -944,7 +858,7 @@ class ShorttermMemoryRepository:
             name: New name (optional)
             types: New types list (optional)
             description: New description (optional)
-            confidence: New confidence (optional)
+            importance: New importance (optional)
             metadata: New metadata (optional)
 
         Returns:
@@ -965,9 +879,9 @@ class ShorttermMemoryRepository:
             updates.append("e.description = $description")
             params["description"] = description
 
-        if confidence is not None:
-            updates.append("e.confidence = $confidence")
-            params["confidence"] = confidence
+        if importance is not None:
+            updates.append("e.importance = $importance")
+            params["importance"] = importance
 
         if metadata is not None:
             updates.append("e.metadata = $metadata_json")
@@ -976,7 +890,9 @@ class ShorttermMemoryRepository:
         if not updates:
             return await self.get_entity(entity_id)
 
-        updates.append("e.last_seen = $now")
+        # Update last access time and increment access count
+        updates.append("e.last_access = $now")
+        updates.append("e.access_count = COALESCE(e.access_count, 0) + 1")
 
         query = f"""
         MATCH (e:ShorttermEntity)
@@ -984,8 +900,8 @@ class ShorttermMemoryRepository:
         SET {", ".join(updates)}
         RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
                e.name AS name, e.types AS types, e.description AS description,
-               e.confidence AS confidence, e.first_seen AS first_seen, 
-               e.last_seen AS last_seen, e.metadata AS metadata
+               e.importance AS importance, e.access_count AS access_count, e.last_access AS last_access, 
+               e.metadata AS metadata
         """
 
         async with self.neo4j.session() as session:
@@ -1002,9 +918,9 @@ class ShorttermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                first_seen=_convert_neo4j_datetime(record["first_seen"]),
-                last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                importance=record["importance"],
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
@@ -1044,7 +960,7 @@ class ShorttermMemoryRepository:
         to_entity_id: int,
         types: List[str],  # Changed from relationship_type: str to types: List[str]
         description: Optional[str] = None,
-        confidence: float = 0.5,
+        importance: float = 0.5,
         strength: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ShorttermRelationship:
@@ -1058,7 +974,7 @@ class ShorttermMemoryRepository:
             to_entity_id: Target entity node ID (elementId)
             types: Relationship types (e.g., ['USES', 'DEPENDS_ON'])
             description: Optional description
-            confidence: Confidence score (0-1)
+            importance: Importance score (0-1)
             strength: Relationship strength (0-1)
             metadata: Optional metadata
 
@@ -1080,18 +996,16 @@ class ShorttermMemoryRepository:
             shortterm_memory_id: $shortterm_memory_id,
             types: $types,
             description: $description,
-            confidence: $confidence,
-            strength: $strength,
-            first_observed: $now,
-            last_observed: $now,
+            importance: $importance,
+            access_count: $access_count,
+            last_access: $last_access,
             metadata: $metadata_json
         }]->(to)
         RETURN elementId(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.first_observed AS first_observed, r.last_observed AS last_observed,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
         """
 
@@ -1104,9 +1018,9 @@ class ShorttermMemoryRepository:
                 to_entity_id=to_entity_id,
                 types=types,
                 description=description,
-                confidence=confidence,
-                strength=strength,
-                now=now,
+                importance=importance,
+                access_count=0,
+                last_access=None,
                 metadata_json=metadata_json,
             )
             record = await result.single()
@@ -1124,10 +1038,9 @@ class ShorttermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                strength=record["strength"],
-                first_observed=_convert_neo4j_datetime(record["first_observed"]),
-                last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                importance=record["importance"],
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=metadata_dict,
             )
 
@@ -1154,8 +1067,7 @@ class ShorttermMemoryRepository:
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.first_observed AS first_observed, r.last_observed AS last_observed,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
         """
 
@@ -1176,10 +1088,9 @@ class ShorttermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                strength=record["strength"],
-                first_observed=_convert_neo4j_datetime(record["first_observed"]),
-                last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                importance=record["importance"],
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
@@ -1201,10 +1112,9 @@ class ShorttermMemoryRepository:
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.first_observed AS first_observed, r.last_observed AS last_observed,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
-        ORDER BY r.strength DESC, r.confidence DESC
+        ORDER BY r.importance DESC
         """
 
         async with self.neo4j.session() as session:
@@ -1222,10 +1132,9 @@ class ShorttermMemoryRepository:
                     to_entity_name=record["to_entity_name"],
                     types=record["types"] or [],
                     description=record["description"],
-                    confidence=record["confidence"],
-                    strength=record["strength"],
-                    first_observed=_convert_neo4j_datetime(record["first_observed"]),
-                    last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                    importance=record["importance"],
+                    access_count=record["access_count"] or 0,
+                    last_access=_convert_neo4j_datetime(record["last_access"]),
                     metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
@@ -1241,8 +1150,7 @@ class ShorttermMemoryRepository:
         relationship_id: int,
         types: Optional[List[str]] = None,
         description: Optional[str] = None,
-        confidence: Optional[float] = None,
-        strength: Optional[float] = None,
+        importance: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[ShorttermRelationship]:
         """
@@ -1252,8 +1160,7 @@ class ShorttermMemoryRepository:
             relationship_id: Relationship ID
             types: New types (optional)
             description: New description (optional)
-            confidence: New confidence (optional)
-            strength: New strength (optional)
+            importance: New importance (optional)
             metadata: New metadata (optional)
 
         Returns:
@@ -1270,13 +1177,9 @@ class ShorttermMemoryRepository:
             updates.append("r.description = $description")
             params["description"] = description
 
-        if confidence is not None:
-            updates.append("r.confidence = $confidence")
-            params["confidence"] = confidence
-
-        if strength is not None:
-            updates.append("r.strength = $strength")
-            params["strength"] = strength
+        if importance is not None:
+            updates.append("r.importance = $importance")
+            params["importance"] = importance
 
         if metadata is not None:
             updates.append("r.metadata = $metadata")
@@ -1285,7 +1188,7 @@ class ShorttermMemoryRepository:
         if not updates:
             return await self.get_relationship(relationship_id)
 
-        updates.append("r.last_observed = $now")
+        updates.append("r.last_access = $now")
 
         query = f"""
         MATCH (from:ShorttermEntity)-[r:SHORTTERM_RELATES]->(to:ShorttermEntity)
@@ -1295,8 +1198,7 @@ class ShorttermMemoryRepository:
                elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
                r.types AS types, r.description AS description,
-               r.confidence AS confidence, r.strength AS strength,
-               r.first_observed AS first_observed, r.last_observed AS last_observed,
+               r.importance AS importance, r.access_count AS access_count, r.last_access AS last_access,
                r.metadata AS metadata
         """
 
@@ -1317,10 +1219,9 @@ class ShorttermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                confidence=record["confidence"],
-                strength=record["strength"],
-                first_observed=_convert_neo4j_datetime(record["first_observed"]),
-                last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                importance=record["importance"],
+                access_count=record["access_count"] or 0,
+                last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
@@ -1369,13 +1270,14 @@ class ShorttermMemoryRepository:
             )
         else:
             # Handle list/tuple format
+            # Expected order: id, external_id, title, summary, update_count, metadata, created_at, last_updated
             return ShorttermMemory(
                 id=row[0],
                 external_id=row[1],
                 title=row[2],
                 summary=row[3],
-                update_count=row[4] if len(row) > 4 else 0,
-                metadata=row[5] if len(row) > 5 and isinstance(row[5], dict) else {},
+                update_count=int(row[4]) if row[4] is not None else 0,
+                metadata=row[5] if isinstance(row[5], dict) else {},
                 created_at=row[6] if len(row) > 6 else datetime.now(timezone.utc),
                 last_updated=row[7] if len(row) > 7 else datetime.now(timezone.utc),
                 chunks=[],  # Populated separately if needed
@@ -1389,19 +1291,21 @@ class ShorttermMemoryRepository:
                 id=row["id"],
                 shortterm_memory_id=row["shortterm_memory_id"],
                 content=row["content"],
-                chunk_order=row.get("chunk_order", 0),
                 section_id=row.get("section_id"),
+                access_count=row.get("access_count", 0),
+                last_access=row.get("last_access"),
                 metadata=row.get("metadata", {}),
             )
         elif isinstance(row, (list, tuple)):
-            # Legacy tuple format
+            # Expected tuple format: id, shortterm_memory_id, content, section_id, metadata, access_count, last_access
             return ShorttermMemoryChunk(
                 id=row[0],
                 shortterm_memory_id=row[1],
-                content=row[3] if len(row) > 3 else row[2],
-                chunk_order=row[4] if len(row) > 4 else 0,
-                section_id=row[5] if len(row) > 5 else None,
-                metadata=row[6] if len(row) > 6 and isinstance(row[6], dict) else {},
+                content=row[2],
+                section_id=row[3] if isinstance(row[3], str) else None,
+                metadata=row[4] if len(row) > 4 and isinstance(row[4], dict) else {},
+                access_count=int(row[5]) if len(row) > 5 and row[5] is not None else 0,
+                last_access=row[6] if len(row) > 6 else None,
             )
         else:
             raise ValueError(f"Unsupported row format: {type(row)}")
