@@ -35,20 +35,16 @@ class Config(BaseModel):
 
     # Agent Model Configuration
     er_extractor_agent_model: str = Field(
-        default_factory=lambda: os.getenv("ER_EXTRACTOR_AGENT_MODEL", "google:gemini-2.0-flash-exp")
+        default_factory=lambda: os.getenv("ER_EXTRACTOR_AGENT_MODEL", "google:gemini-2.5-flash")
     )
     memory_update_agent_model: str = Field(
-        default_factory=lambda: os.getenv(
-            "MEMORY_UPDATE_AGENT_MODEL", "google:gemini-2.0-flash-exp"
-        )
+        default_factory=lambda: os.getenv("MEMORY_UPDATE_AGENT_MODEL", "google:gemini-2.5-flash")
     )
     memorizer_agent_model: str = Field(
-        default_factory=lambda: os.getenv("MEMORIZER_AGENT_MODEL", "google:gemini-2.0-flash-exp")
+        default_factory=lambda: os.getenv("MEMORIZER_AGENT_MODEL", "google:gemini-2.5-flash")
     )
     memory_retrieve_agent_model: str = Field(
-        default_factory=lambda: os.getenv(
-            "MEMORY_RETRIEVE_AGENT_MODEL", "google:gemini-2.0-flash-exp"
-        )
+        default_factory=lambda: os.getenv("MEMORY_RETRIEVE_AGENT_MODEL", "google:gemini-2.5-flash")
     )
 
     # Agent Settings

@@ -1,7 +1,7 @@
 services:
   # PostgreSQL Database with pgvector and pg_bm25
   postgres:
-    image: pgvector/pgvector:pg16
+    image: tensorchord/vchord-suite:pg16-latest
     container_name: agent_mem_postgres
     restart: unless-stopped
     environment:
@@ -73,10 +73,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    profiles:
-      - gpu
-# For CPU-only deployment, start with: docker-compose up -d
-# For GPU deployment, start with: docker-compose --profile gpu up -d
 
 volumes:
   postgres_data:
@@ -85,7 +81,6 @@ volumes:
     driver: local
   neo4j_logs:
     driver: local
-# ollama_data removed - using Z:/Ollama direct mount instead
 
 networks:
   agent_mem_network:

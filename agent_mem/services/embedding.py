@@ -10,8 +10,15 @@ from typing import List, Optional
 import aiohttp
 
 from agent_mem.config import Config
+import google.genai.client as google
 
 logger = logging.getLogger(__name__)
+
+# client = google.Client()
+
+# result = client.models.embed_content(
+#     model="gemini-embedding-001", contents="What is the meaning of life?"
+# )
 
 
 class EmbeddingService:

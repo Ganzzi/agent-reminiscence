@@ -160,50 +160,49 @@ agent = Agent(model)
 
 ## Tools
 
-Tools are functions that the LLM can call to perform specific actions or retrieve information. Pydantic AI provides two types of tool decorators.
+Tools are functions that the LLM can call to perform specific actions or retrieve information. Pydantic AI provides the `Tool` class for defining tools.
 
 ### Tool Types
 
-#### 1. `@agent.tool` - Context-aware tools
+#### 1. Context-aware tools with dependencies
 
 These tools have access to `RunContext` with dependencies:
 
 ```python
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, Tool
 from dataclasses import dataclass
 
 @dataclass
 class DatabaseDeps:
     connection_string: str
 
-agent = Agent(
-    'openai:gpt-4o',
-    deps_type=DatabaseDeps,
-)
-
-@agent.tool
-async def get_user_data(ctx: RunContext[DatabaseDeps], user_id: int) -> dict:
+def get_user_data(ctx: RunContext[DatabaseDeps], user_id: int) -> dict:
     """Fetch user data from the database."""
     # Access dependencies through ctx.deps
     conn_string = ctx.deps.connection_string
     # Perform database operations...
     return {'user_id': user_id, 'name': 'John Doe'}
+
+agent = Agent(
+    'openai:gpt-4o',
+    deps_type=DatabaseDeps,
+    tools=[Tool(get_user_data, takes_ctx=True)],
+)
 ```
 
-#### 2. `@agent.tool_plain` - Context-independent tools
+#### 2. Context-independent tools
 
 These tools don't need dependencies:
 
 ```python
 import random
-from pydantic_ai import Agent
+from pydantic_ai import Agent, Tool
 
-agent = Agent('openai:gpt-4o')
-
-@agent.tool_plain
 def roll_dice(sides: int = 6) -> int:
     """Roll a dice with the specified number of sides."""
     return random.randint(1, sides)
+
+agent = Agent('openai:gpt-4o', tools=[Tool(roll_dice, takes_ctx=False)])
 ```
 
 ### Tool Schema
@@ -212,27 +211,21 @@ Pydantic AI automatically generates tool schemas from function signatures and do
 
 ```python
 from pydantic import BaseModel
-from pydantic_ai import Agent
+from pydantic_ai import Agent, Tool
 
-agent = Agent('openai:gpt-4o')
-
-class CalculationInput(BaseModel):
-    """Input for mathematical calculations."""
-    numerator: float
-    denominator: float
-
-@agent.tool_plain
-def divide(calc: CalculationInput) -> float:
+def divide(numerator: float, denominator: float) -> float:
     """Divide two numbers."""
-    if calc.denominator == 0:
+    if denominator == 0:
         raise ValueError("Cannot divide by zero")
-    return calc.numerator / calc.denominator
+    return numerator / denominator
+
+agent = Agent('openai:gpt-4o', tools=[Tool(divide, takes_ctx=False)])
 ```
 
 ### Complete Tool Example
 
 ```python
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, Tool
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -240,27 +233,263 @@ from datetime import datetime
 class WeatherDeps:
     api_key: str
 
-agent = Agent(
-    'openai:gpt-4o',
-    deps_type=WeatherDeps,
-    system_prompt='You are a weather assistant. Use tools to get weather information.'
-)
-
-@agent.tool_plain
 def get_current_time() -> str:
     """Get the current date and time."""
     return datetime.now().isoformat()
 
-@agent.tool
-async def get_weather(ctx: RunContext[WeatherDeps], city: str) -> str:
+def get_weather(ctx: RunContext[WeatherDeps], city: str) -> str:
     """Get the current weather for a city."""
     # In real implementation, call weather API with ctx.deps.api_key
     return f"Weather in {city}: Sunny, 22°C"
+
+agent = Agent(
+    'openai:gpt-4o',
+    deps_type=WeatherDeps,
+    system_prompt='You are a weather assistant. Use tools to get weather information.',
+    tools=[
+        Tool(get_current_time, takes_ctx=False),
+        Tool(get_weather, takes_ctx=True),
+    ]
+)
 
 # Run the agent
 deps = WeatherDeps(api_key='your-api-key')
 result = await agent.run('What is the weather in London?', deps=deps)
 print(result.output)
+```
+
+### Alternative: Passing Functions Directly
+
+You can also pass functions directly to the `tools` parameter, and Pydantic AI will automatically detect whether they need context:
+
+```python
+from pydantic_ai import Agent, RunContext
+from dataclasses import dataclass
+
+@dataclass
+class WeatherDeps:
+    api_key: str
+
+def get_weather(ctx: RunContext[WeatherDeps], city: str) -> str:
+    """Get the current weather for a city."""
+    return f"Weather in {city}: Sunny, 22°C"
+
+def roll_dice() -> int:
+    """Roll a dice."""
+    return random.randint(1, 6)
+
+agent = Agent(
+    'openai:gpt-4o',
+    deps_type=WeatherDeps,
+    tools=[get_weather, roll_dice],  # Functions passed directly
+)
+---
+
+## MCP Server Tools
+
+Pydantic AI integrates with the Model Context Protocol (MCP) to create servers that expose AI agent capabilities as tools. MCP allows different applications to communicate with AI models through a standardized protocol.
+
+### Basic MCP Server
+
+Create a simple MCP server that exposes a Pydantic AI agent as a tool:
+
+```python
+from mcp.server.fastmcp import FastMCP
+from pydantic_ai import Agent
+
+# Create MCP server
+server = FastMCP('Pydantic AI Server')
+
+# Create Pydantic AI agent
+server_agent = Agent(
+    'anthropic:claude-3-5-haiku-latest', 
+    system_prompt='always reply in rhyme'
+)
+
+@server.tool()
+async def poet(theme: str) -> str:
+    """Poem generator"""
+    result = await server_agent.run(f'write a poem about {theme}')
+    return result.output
+
+if __name__ == '__main__':
+    server.run()
+```
+
+### MCP Server with Sampling
+
+For more control over LLM interactions, use MCP sampling to intercept and handle model requests:
+
+```python
+from mcp.server.fastmcp import Context, FastMCP
+from pydantic_ai import Agent
+from pydantic_ai.models.mcp_sampling import MCPSamplingModel
+
+server = FastMCP('Pydantic AI Server with sampling')
+server_agent = Agent(system_prompt='always reply in rhyme')
+
+@server.tool()
+async def poet(ctx: Context, theme: str) -> str:
+    """Poem generator with sampling"""
+    result = await server_agent.run(
+        f'write a poem about {theme}', 
+        model=MCPSamplingModel(session=ctx.session)
+    )
+    return result.output
+
+if __name__ == '__main__':
+    server.run()
+```
+
+### MCP Client
+
+Connect to an MCP server from a Python client:
+
+```python
+import asyncio
+import os
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def client():
+    # Configure server parameters
+    server_params = StdioServerParameters(
+        command='python', 
+        args=['mcp_server.py'], 
+        env=os.environ
+    )
+    
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            
+            # Call the poet tool
+            result = await session.call_tool('poet', {'theme': 'socks'})
+            print(result.content[0].text)
+
+if __name__ == '__main__':
+    asyncio.run(client())
+```
+
+### MCP Client with Sampling Support
+
+Handle sampling callbacks when the server needs LLM responses:
+
+```python
+import asyncio
+from typing import Any
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.shared.context import RequestContext
+from mcp.types import (
+    CreateMessageRequestParams,
+    CreateMessageResult,
+    ErrorData,
+    TextContent,
+)
+
+async def sampling_callback(
+    context: RequestContext[ClientSession, Any], 
+    params: CreateMessageRequestParams
+) -> CreateMessageResult | ErrorData:
+    """Handle LLM sampling requests from the server."""
+    print('Sampling system prompt:', params.systemPrompt)
+    print('Sampling messages:', params.messages)
+    
+    # Call your LLM here or mock response
+    response_content = 'Socks for a fox.'
+    
+    return CreateMessageResult(
+        role='assistant',
+        content=TextContent(type='text', text=response_content),
+        model='your-llm-model',
+    )
+
+async def client():
+    server_params = StdioServerParameters(
+        command='python', 
+        args=['mcp_server_sampling.py']
+    )
+    
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write, sampling_callback=sampling_callback) as session:
+            await session.initialize()
+            
+            result = await session.call_tool('poet', {'theme': 'socks'})
+            print(result.content[0].text)
+
+if __name__ == '__main__':
+    asyncio.run(client())
+```
+
+### Installation
+
+Install the required packages for MCP server functionality:
+
+```bash
+pip install pydantic-ai[mcp]
+pip install mcp
+```
+
+### Use Cases
+
+MCP servers with Pydantic AI are useful for:
+
+- **Tool Integration**: Exposing AI agents as tools that other applications can use
+- **Cross-Platform Communication**: Allowing different AI systems to communicate through standardized protocols
+- **Client-Server Architecture**: Separating AI logic from client applications
+- **Sampling Control**: Intercepting and customizing LLM interactions
+
+### Advanced MCP Server
+
+Create a more complex MCP server with multiple tools and dependencies:
+
+```python
+from mcp.server.fastmcp import FastMCP
+from pydantic_ai import Agent, RunContext
+from dataclasses import dataclass
+import httpx
+
+@dataclass
+class ServerDeps:
+    api_key: str
+    http_client: httpx.AsyncClient
+
+server = FastMCP('Advanced Pydantic AI Server')
+
+# Agent with dependencies
+poetry_agent = Agent(
+    'openai:gpt-4o',
+    deps_type=ServerDeps,
+    system_prompt='You are a creative poet. Write beautiful, rhyming poems.'
+)
+
+@server.tool()
+async def generate_poem(theme: str, style: str = 'freeform') -> str:
+    """Generate a poem on a given theme with specified style."""
+    async with httpx.AsyncClient() as client:
+        deps = ServerDeps(api_key='your-api-key', http_client=client)
+        result = await poetry_agent.run(
+            f'Write a {style} poem about {theme}', 
+            deps=deps
+        )
+    return result.output
+
+@server.tool()
+async def analyze_poem(poem_text: str) -> dict:
+    """Analyze the structure and themes of a poem."""
+    analysis_agent = Agent(
+        'anthropic:claude-3-5-sonnet',
+        system_prompt='You are a poetry critic. Analyze poems professionally.'
+    )
+    
+    result = await analysis_agent.run(
+        f'Analyze this poem: {poem_text}'
+    )
+    return {'analysis': result.output}
+
+if __name__ == '__main__':
+    server.run()
 ```
 
 ---

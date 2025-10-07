@@ -12,6 +12,8 @@ import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
+from psqlpy.extra_types import PgVector
+
 from agent_mem.database.postgres_manager import PostgreSQLManager
 from agent_mem.database.neo4j_manager import Neo4jManager
 from agent_mem.database.models import (
@@ -21,6 +23,15 @@ from agent_mem.database.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_neo4j_datetime(dt):
+    """Convert Neo4j DateTime to Python datetime."""
+    if dt is None:
+        return None
+    if hasattr(dt, "to_native"):
+        return dt.to_native()
+    return dt
 
 
 class LongtermMemoryRepository:
@@ -80,17 +91,19 @@ class LongtermMemoryRepository:
         query = """
             INSERT INTO longterm_memory_chunk 
             (external_id, shortterm_memory_id, chunk_order, content, embedding, 
-             confidence_score, importance_score, start_date, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             confidence_score, importance_score, start_date, last_updated, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id, external_id, shortterm_memory_id, chunk_order, content, 
                       confidence_score, importance_score, start_date, end_date, 
-                      metadata, created_at
+                      last_updated, metadata, created_at
         """
 
         # Convert embedding to PostgreSQL vector format if provided
-        embedding_str = None
+        pg_vector = None
         if embedding:
-            embedding_str = f"[{','.join(map(str, embedding))}]"
+            pg_vector = PgVector(embedding)
+
+        current_time = datetime.now(timezone.utc)
 
         async with self.postgres.connection() as conn:
             result = await conn.execute(
@@ -100,10 +113,11 @@ class LongtermMemoryRepository:
                     shortterm_memory_id,
                     chunk_order,
                     content,
-                    embedding_str,
+                    pg_vector,
                     confidence_score,
                     importance_score,
-                    start_date or datetime.now(timezone.utc),
+                    start_date or current_time,
+                    current_time,  # last_updated
                     metadata or {},
                 ],
             )
@@ -344,6 +358,33 @@ class LongtermMemoryRepository:
             logger.info(f"Deleted longterm chunk {chunk_id}")
             return True
 
+    async def update_chunk_timestamps(self, shortterm_memory_id: int) -> int:
+        """
+        Update last_updated timestamp for all chunks from a shortterm memory.
+
+        Only updates chunks where last_updated is NULL (first-time promotion).
+
+        Args:
+            shortterm_memory_id: Shortterm memory ID
+
+        Returns:
+            Number of chunks updated
+        """
+        query = """
+            UPDATE longterm_memory_chunk
+            SET last_updated = CURRENT_TIMESTAMP
+            WHERE shortterm_memory_id = $1 AND last_updated IS NULL
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [shortterm_memory_id])
+            updated_count = len(result.result()) if result.result() else 0
+            logger.info(
+                f"Updated last_updated for {updated_count} chunks "
+                f"from shortterm memory {shortterm_memory_id}"
+            )
+            return updated_count
+
     # =========================================================================
     # SEARCH OPERATIONS
     # =========================================================================
@@ -373,7 +414,7 @@ class LongtermMemoryRepository:
         Returns:
             List of LongtermMemoryChunk with similarity_score set
         """
-        embedding_str = f"[{','.join(map(str, query_embedding))}]"
+        pg_vector = PgVector(query_embedding)
 
         valid_clause = "AND end_date IS NULL" if only_valid else ""
 
@@ -382,15 +423,15 @@ class LongtermMemoryRepository:
                 id, external_id, shortterm_memory_id, chunk_order, content, 
                 confidence_score, importance_score, start_date, end_date, 
                 metadata, created_at,
-                1 - (embedding <=> $1::vector) AS similarity
+                1 - (embedding <=> $1) AS similarity
             FROM longterm_memory_chunk
             WHERE external_id = $2 
               AND embedding IS NOT NULL
-              AND (1 - (embedding <=> $1::vector)) >= $3
+              AND (1 - (embedding <=> $1)) >= $3
               AND confidence_score >= $4
               AND importance_score >= $5
               {valid_clause}
-            ORDER BY embedding <=> $1::vector
+            ORDER BY embedding <=> $1
             LIMIT $6
         """
 
@@ -398,7 +439,7 @@ class LongtermMemoryRepository:
             result = await conn.execute(
                 query,
                 [
-                    embedding_str,
+                    pg_vector,
                     external_id,
                     min_similarity,
                     min_confidence,
@@ -447,7 +488,7 @@ class LongtermMemoryRepository:
                 id, external_id, shortterm_memory_id, chunk_order, content, 
                 confidence_score, importance_score, start_date, end_date, 
                 metadata, created_at,
-                bm25_score(content_bm25, tokenize($1, 'bert')) AS score
+                content_bm25 <&> to_bm25query('idx_longterm_chunk_bm25', tokenize($1, 'bert')) AS score
             FROM longterm_memory_chunk
             WHERE external_id = $2
               AND content_bm25 IS NOT NULL
@@ -502,21 +543,21 @@ class LongtermMemoryRepository:
         Returns:
             List of LongtermMemoryChunk with combined scores
         """
-        embedding_str = f"[{','.join(map(str, query_embedding))}]"
+        pg_vector = PgVector(query_embedding)
         valid_clause = "AND c.end_date IS NULL" if only_valid else ""
 
         query = f"""
             WITH vector_results AS (
                 SELECT 
                     id,
-                    1 - (embedding <=> $1::vector) AS vector_score
+                    1 - (embedding <=> $1) AS vector_score
                 FROM longterm_memory_chunk
                 WHERE external_id = $2 AND embedding IS NOT NULL
             ),
             bm25_results AS (
                 SELECT 
                     id,
-                    bm25_score(content_bm25, tokenize($3, 'bert')) AS bm25_score
+                    content_bm25 <&> to_bm25query('idx_longterm_chunk_bm25', tokenize($3, 'bert')) AS bm25_score
                 FROM longterm_memory_chunk
                 WHERE external_id = $2 AND content_bm25 IS NOT NULL
             )
@@ -541,7 +582,7 @@ class LongtermMemoryRepository:
             result = await conn.execute(
                 query,
                 [
-                    embedding_str,
+                    pg_vector,
                     external_id,
                     query_text,
                     vector_weight,
@@ -570,7 +611,7 @@ class LongtermMemoryRepository:
         self,
         external_id: str,
         name: str,
-        entity_type: str,
+        types: List[str],
         description: Optional[str] = None,
         confidence: float = 0.5,
         importance: float = 0.5,
@@ -582,7 +623,7 @@ class LongtermMemoryRepository:
         Args:
             external_id: Agent identifier
             name: Entity name
-            entity_type: Entity type (e.g., 'Person', 'Technology', 'Concept')
+            types: Entity types (e.g., ['Person', 'Developer'], ['Technology', 'Tool'])
             description: Optional description
             confidence: Confidence score (0-1)
             importance: Importance score (0-1)
@@ -597,16 +638,16 @@ class LongtermMemoryRepository:
         CREATE (e:LongtermEntity {
             external_id: $external_id,
             name: $name,
-            type: $entity_type,
+            types: $types,
             description: $description,
             confidence: $confidence,
             importance: $importance,
             start_date: $now,
             last_updated: $now,
-            metadata: $metadata
+            metadata: $metadata_json_json
         })
-        RETURN id(e) AS id, e.external_id AS external_id, e.name AS name, 
-               e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
+               e.types AS types, e.description AS description,
                e.confidence AS confidence, e.importance AS importance,
                e.start_date AS start_date, e.last_updated AS last_updated,
                e.metadata AS metadata
@@ -617,12 +658,12 @@ class LongtermMemoryRepository:
                 query,
                 external_id=external_id,
                 name=name,
-                entity_type=entity_type,
+                types=types,
                 description=description,
                 confidence=confidence,
                 importance=importance,
                 now=now,
-                metadata=metadata or {},
+                metadata_json=json.dumps(metadata or {}),
             )
             record = await result.single()
 
@@ -630,13 +671,13 @@ class LongtermMemoryRepository:
                 id=record["id"],
                 external_id=record["external_id"],
                 name=record["name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 importance=record["importance"],
-                start_date=record["start_date"],
-                last_updated=record["last_updated"],
-                metadata=record["metadata"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
             logger.info(f"Created longterm entity {entity.id}: {name}")
@@ -655,8 +696,8 @@ class LongtermMemoryRepository:
         query = """
         MATCH (e:LongtermEntity)
         WHERE id(e) = $entity_id
-        RETURN id(e) AS id, e.external_id AS external_id, e.name AS name, 
-               e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
+               e.types AS types, e.description AS description,
                e.confidence AS confidence, e.importance AS importance,
                e.start_date AS start_date, e.last_updated AS last_updated,
                e.metadata AS metadata
@@ -673,13 +714,13 @@ class LongtermMemoryRepository:
                 id=record["id"],
                 external_id=record["external_id"],
                 name=record["name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 importance=record["importance"],
-                start_date=record["start_date"],
-                last_updated=record["last_updated"],
-                metadata=record["metadata"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
     async def get_entities_by_external_id(
@@ -702,8 +743,8 @@ class LongtermMemoryRepository:
         query = """
         MATCH (e:LongtermEntity {external_id: $external_id})
         WHERE e.confidence >= $min_confidence AND e.importance >= $min_importance
-        RETURN id(e) AS id, e.external_id AS external_id, e.name AS name, 
-               e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
+               e.types AS types, e.description AS description,
                e.confidence AS confidence, e.importance AS importance,
                e.start_date AS start_date, e.last_updated AS last_updated,
                e.metadata AS metadata
@@ -717,20 +758,20 @@ class LongtermMemoryRepository:
                 min_confidence=min_confidence,
                 min_importance=min_importance,
             )
-            records = await result.list()
+            records = [record async for record in result]
 
             entities = [
                 LongtermEntity(
                     id=record["id"],
                     external_id=record["external_id"],
                     name=record["name"],
-                    type=record["type"],
+                    types=record["types"] or [],
                     description=record["description"],
                     confidence=record["confidence"],
                     importance=record["importance"],
-                    start_date=record["start_date"],
-                    last_updated=record["last_updated"],
-                    metadata=record["metadata"],
+                    start_date=_convert_neo4j_datetime(record["start_date"]),
+                    last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                    metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
             ]
@@ -741,6 +782,7 @@ class LongtermMemoryRepository:
     async def update_entity(
         self,
         entity_id: int,
+        types: Optional[List[str]] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
         confidence: Optional[float] = None,
@@ -752,6 +794,7 @@ class LongtermMemoryRepository:
 
         Args:
             entity_id: Entity node ID
+            types: New types (optional)
             name: New name (optional)
             description: New description (optional)
             confidence: New confidence (optional)
@@ -763,6 +806,10 @@ class LongtermMemoryRepository:
         """
         updates = []
         params = {"entity_id": entity_id, "now": datetime.now(timezone.utc)}
+
+        if types is not None:
+            updates.append("e.types = $types")
+            params["types"] = types
 
         if name is not None:
             updates.append("e.name = $name")
@@ -793,8 +840,8 @@ class LongtermMemoryRepository:
         MATCH (e:LongtermEntity)
         WHERE id(e) = $entity_id
         SET {", ".join(updates)}
-        RETURN id(e) AS id, e.external_id AS external_id, e.name AS name, 
-               e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
+               e.types AS types, e.description AS description,
                e.confidence AS confidence, e.importance AS importance,
                e.start_date AS start_date, e.last_updated AS last_updated,
                e.metadata AS metadata
@@ -811,16 +858,97 @@ class LongtermMemoryRepository:
                 id=record["id"],
                 external_id=record["external_id"],
                 name=record["name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 importance=record["importance"],
-                start_date=record["start_date"],
-                last_updated=record["last_updated"],
-                metadata=record["metadata"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
             logger.info(f"Updated longterm entity {entity_id}")
+            return entity
+
+    async def update_entity_with_metadata(
+        self,
+        entity_id: int,
+        confidence: Optional[float] = None,
+        importance: Optional[float] = None,
+        last_seen: Optional[datetime] = None,
+        metadata_update: Optional[Dict[str, Any]] = None,
+    ) -> Optional[LongtermEntity]:
+        """
+        Update entity and merge metadata updates array.
+
+        Used during promotion to track confidence/importance changes over time.
+
+        Args:
+            entity_id: Entity node ID
+            confidence: New confidence score
+            importance: New importance score
+            last_seen: Last seen timestamp
+            metadata_update: Dict with updates to merge (e.g., {"updates": [...]})
+
+        Returns:
+            Updated LongtermEntity or None if not found
+        """
+        updates = []
+        params = {"entity_id": entity_id, "now": datetime.now(timezone.utc)}
+
+        if confidence is not None:
+            updates.append("e.confidence = $confidence")
+            params["confidence"] = confidence
+
+        if importance is not None:
+            updates.append("e.importance = $importance")
+            params["importance"] = importance
+
+        if last_seen is not None:
+            updates.append("e.last_seen = $last_seen")
+            params["last_seen"] = last_seen
+
+        updates.append("e.last_updated = $now")
+
+        # Handle metadata merging
+        if metadata_update:
+            # Merge metadata - preserve existing fields and add/update new ones
+            for key, value in metadata_update.items():
+                updates.append(f"e.metadata = coalesce(e.metadata, {{}}) + ${key}_value")
+                params[f"{key}_value"] = {key: value}
+
+        query = f"""
+        MATCH (e:LongtermEntity)
+        WHERE id(e) = $entity_id
+        SET {", ".join(updates)}
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.name AS name, 
+               e.types AS types, e.description AS description,
+               e.confidence AS confidence, e.importance AS importance,
+               e.start_date AS start_date, e.last_updated AS last_updated,
+               e.metadata AS metadata
+        """
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, **params)
+            record = await result.single()
+
+            if not record:
+                return None
+
+            entity = LongtermEntity(
+                id=record["id"],
+                external_id=record["external_id"],
+                name=record["name"],
+                types=record["types"] or [],
+                description=record["description"],
+                confidence=record["confidence"],
+                importance=record["importance"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
+            )
+
+            logger.info(f"Updated longterm entity {entity_id} with metadata tracking")
             return entity
 
     async def delete_entity(self, entity_id: int) -> bool:
@@ -853,7 +981,7 @@ class LongtermMemoryRepository:
         external_id: str,
         from_entity_id: int,
         to_entity_id: int,
-        relationship_type: str,
+        types: List[str],
         description: Optional[str] = None,
         confidence: float = 0.5,
         strength: float = 0.5,
@@ -867,7 +995,7 @@ class LongtermMemoryRepository:
             external_id: Agent identifier
             from_entity_id: Source entity node ID
             to_entity_id: Target entity node ID
-            relationship_type: Relationship type (e.g., 'USES', 'DEPENDS_ON')
+            types: Relationship types (e.g., ['USES', 'DEPENDS_ON'])
             description: Optional description
             confidence: Confidence score (0-1)
             strength: Relationship strength (0-1)
@@ -879,24 +1007,29 @@ class LongtermMemoryRepository:
         """
         now = datetime.now(timezone.utc)
 
+        # Convert metadata to JSON string for Neo4j storage
+        metadata_json = json.dumps(metadata or {})
+
         query = """
-        MATCH (from:LongtermEntity), (to:LongtermEntity)
-        WHERE id(from) = $from_entity_id AND id(to) = $to_entity_id
-        CREATE (from)-[r:RELATES_TO {
+        MATCH (from:LongtermEntity)
+        WHERE elementId(from) = $from_entity_id
+        MATCH (to:LongtermEntity)
+        WHERE elementId(to) = $to_entity_id
+        CREATE (from)-[r:LONGTERM_RELATES {
             external_id: $external_id,
-            type: $relationship_type,
+            types: $types,
             description: $description,
             confidence: $confidence,
             strength: $strength,
             importance: $importance,
             start_date: $now,
             last_updated: $now,
-            metadata: $metadata
+            metadata: $metadata_json
         }]->(to)
-        RETURN id(r) AS id, r.external_id AS external_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        RETURN elementId(r) AS id, r.external_id AS external_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.importance AS importance,
                r.start_date AS start_date, r.last_updated AS last_updated,
@@ -909,13 +1042,13 @@ class LongtermMemoryRepository:
                 external_id=external_id,
                 from_entity_id=from_entity_id,
                 to_entity_id=to_entity_id,
-                relationship_type=relationship_type,
+                types=types,
                 description=description,
                 confidence=confidence,
                 strength=strength,
                 importance=importance,
                 now=now,
-                metadata=metadata or {},
+                metadata_json=json.dumps(metadata or {}),
             )
             record = await result.single()
 
@@ -926,14 +1059,14 @@ class LongtermMemoryRepository:
                 to_entity_id=record["to_entity_id"],
                 from_entity_name=record["from_entity_name"],
                 to_entity_name=record["to_entity_name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 strength=record["strength"],
                 importance=record["importance"],
-                start_date=record["start_date"],
-                last_updated=record["last_updated"],
-                metadata=record["metadata"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
             logger.info(
@@ -953,12 +1086,12 @@ class LongtermMemoryRepository:
             LongtermRelationship or None if not found
         """
         query = """
-        MATCH (from:LongtermEntity)-[r:RELATES_TO]->(to:LongtermEntity)
-        WHERE id(r) = $relationship_id
-        RETURN id(r) AS id, r.external_id AS external_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        MATCH (from:LongtermEntity)-[r:LONGTERM_RELATES]->(to:LongtermEntity)
+        WHERE elementId(r) = $relationship_id
+        RETURN elementId(r) AS id, r.external_id AS external_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.importance AS importance,
                r.start_date AS start_date, r.last_updated AS last_updated,
@@ -979,14 +1112,14 @@ class LongtermMemoryRepository:
                 to_entity_id=record["to_entity_id"],
                 from_entity_name=record["from_entity_name"],
                 to_entity_name=record["to_entity_name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 strength=record["strength"],
                 importance=record["importance"],
-                start_date=record["start_date"],
-                last_updated=record["last_updated"],
-                metadata=record["metadata"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
     async def get_relationships_by_external_id(
@@ -1007,12 +1140,12 @@ class LongtermMemoryRepository:
             List of LongtermRelationship objects
         """
         query = """
-        MATCH (from:LongtermEntity)-[r:RELATES_TO {external_id: $external_id}]->(to:LongtermEntity)
+        MATCH (from:LongtermEntity)-[r:LONGTERM_RELATES {external_id: $external_id}]->(to:LongtermEntity)
         WHERE r.confidence >= $min_confidence AND r.importance >= $min_importance
-        RETURN id(r) AS id, r.external_id AS external_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        RETURN elementId(r) AS id, r.external_id AS external_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.importance AS importance,
                r.start_date AS start_date, r.last_updated AS last_updated,
@@ -1027,7 +1160,7 @@ class LongtermMemoryRepository:
                 min_confidence=min_confidence,
                 min_importance=min_importance,
             )
-            records = await result.list()
+            records = [record async for record in result]
 
             relationships = [
                 LongtermRelationship(
@@ -1037,14 +1170,14 @@ class LongtermMemoryRepository:
                     to_entity_id=record["to_entity_id"],
                     from_entity_name=record["from_entity_name"],
                     to_entity_name=record["to_entity_name"],
-                    type=record["type"],
+                    types=record["types"] or [],
                     description=record["description"],
                     confidence=record["confidence"],
                     strength=record["strength"],
                     importance=record["importance"],
-                    start_date=record["start_date"],
-                    last_updated=record["last_updated"],
-                    metadata=record["metadata"],
+                    start_date=_convert_neo4j_datetime(record["start_date"]),
+                    last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                    metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
             ]
@@ -1055,6 +1188,7 @@ class LongtermMemoryRepository:
     async def update_relationship(
         self,
         relationship_id: int,
+        types: Optional[List[str]] = None,
         description: Optional[str] = None,
         confidence: Optional[float] = None,
         strength: Optional[float] = None,
@@ -1066,6 +1200,7 @@ class LongtermMemoryRepository:
 
         Args:
             relationship_id: Relationship ID
+            types: New types (optional)
             description: New description (optional)
             confidence: New confidence (optional)
             strength: New strength (optional)
@@ -1077,6 +1212,10 @@ class LongtermMemoryRepository:
         """
         updates = []
         params = {"relationship_id": relationship_id, "now": datetime.now(timezone.utc)}
+
+        if types is not None:
+            updates.append("r.types = $types")
+            params["types"] = types
 
         if description is not None:
             updates.append("r.description = $description")
@@ -1104,13 +1243,13 @@ class LongtermMemoryRepository:
         updates.append("r.last_updated = $now")
 
         query = f"""
-        MATCH (from:LongtermEntity)-[r:RELATES_TO]->(to:LongtermEntity)
-        WHERE id(r) = $relationship_id
+        MATCH (from:LongtermEntity)-[r:LONGTERM_RELATES]->(to:LongtermEntity)
+        WHERE elementId(r) = $relationship_id
         SET {", ".join(updates)}
-        RETURN id(r) AS id, r.external_id AS external_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        RETURN elementId(r) AS id, r.external_id AS external_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.importance AS importance,
                r.start_date AS start_date, r.last_updated AS last_updated,
@@ -1131,14 +1270,14 @@ class LongtermMemoryRepository:
                 to_entity_id=record["to_entity_id"],
                 from_entity_name=record["from_entity_name"],
                 to_entity_name=record["to_entity_name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 strength=record["strength"],
                 importance=record["importance"],
-                start_date=record["start_date"],
-                last_updated=record["last_updated"],
-                metadata=record["metadata"],
+                start_date=_convert_neo4j_datetime(record["start_date"]),
+                last_updated=_convert_neo4j_datetime(record["last_updated"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
             logger.info(f"Updated longterm relationship {relationship_id}")
@@ -1155,8 +1294,8 @@ class LongtermMemoryRepository:
             True if deleted
         """
         query = """
-        MATCH ()-[r:RELATES_TO]->()
-        WHERE id(r) = $relationship_id
+        MATCH ()-[r:LONGTERM_RELATES]->()
+        WHERE elementId(r) = $relationship_id
         DELETE r
         """
 

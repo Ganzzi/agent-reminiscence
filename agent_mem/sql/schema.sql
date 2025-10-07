@@ -1,16 +1,20 @@
 -- Standalone memory management schema with vector and BM25 search
 -- Supports hierarchical memory: Active -> Shortterm -> Longterm
-
 -- ============================================================================
 -- EXTENSIONS
 -- ============================================================================
 -- These must be created by a superuser or user with CREATE privilege
 -- Run manually if needed: CREATE EXTENSION IF NOT EXISTS <name> CASCADE;
 
--- CREATE EXTENSION IF NOT EXISTS vector;           -- pgvector for vector similarity
--- CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;  -- Text tokenization
--- CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;   -- BM25 full-text search
+CREATE EXTENSION IF NOT EXISTS vector;
 
+CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
+
+CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
+
+CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
+
+-- BM25 full-text search
 -- ============================================================================
 -- ACTIVE MEMORY (Working Memory)
 -- ============================================================================
@@ -174,22 +178,30 @@ CREATE INDEX IF NOT EXISTS idx_longterm_chunk_updated ON longterm_memory_chunk (
 -- ============================================================================
 -- TRIGGERS
 -- ============================================================================
-
 -- Create a BERT tokenizer for BM25 indexing
 SELECT create_tokenizer (
         'bert', $$ model = "bert_base_uncased" $$
     );
 
 -- Function to automatically update BM25 vectors when content changes
-CREATE OR REPLACE FUNCTION update_bm25_vector_chunk()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.content IS DISTINCT FROM NEW.content) THEN
-        -- Tokenize content using BERT tokenizer for BM25 indexing
-        NEW.content_bm25 = tokenize(NEW.content, 'bert');
-    END IF;
-    RETURN NEW;
+CREATE
+OR
+REPLACE
+    FUNCTION update_bm25_vector_chunk () RETURNS TRIGGER AS $$ BEGIN IF TG_OP = 'INSERT'
+    OR (
+        TG_OP = 'UPDATE'
+        AND OLD.content IS DISTINCT
+        FROM NEW.content
+    ) THEN
+    -- Tokenize content using BERT tokenizer for BM25 indexing
+    NEW.content_bm25 = tokenize (NEW.content, 'bert');
+
+END IF;
+
+RETURN NEW;
+
 END;
+
 $$ LANGUAGE plpgsql;
 
 -- Trigger for shortterm_memory_chunk
@@ -209,12 +221,21 @@ CREATE TRIGGER trigger_update_bm25_longterm_chunk
     EXECUTE FUNCTION update_bm25_vector_chunk();
 
 -- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
+CREATE
+OR
+REPLACE
+    FUNCTION update_updated_at_column () RETURNS TRIGGER AS $$ BEGIN
+    -- Handle both updated_at and last_updated column names
+    IF TG_TABLE_NAME = 'shortterm_memory' THEN NEW.last_updated = CURRENT_TIMESTAMP;
+
+ELSE NEW.updated_at = CURRENT_TIMESTAMP;
+
+END IF;
+
+RETURN NEW;
+
 END;
+
 $$ LANGUAGE plpgsql;
 
 -- Trigger to auto-update updated_at for active_memory
@@ -241,11 +262,9 @@ CREATE TRIGGER trigger_update_shortterm_memory_timestamp
 --     "update_count": 5
 --   }
 -- }
-
 -- ============================================================================
 -- HELPER VIEWS
 -- ============================================================================
-
 -- View to see currently valid longterm chunks
 CREATE OR REPLACE VIEW valid_longterm_chunks AS
 SELECT
@@ -284,5 +303,7 @@ ORDER BY
 --
 -- 5. To enable extensions, run as superuser:
 --    CREATE EXTENSION IF NOT EXISTS vector;
---    CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
---    CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
+
+-- CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
+
+-- CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;

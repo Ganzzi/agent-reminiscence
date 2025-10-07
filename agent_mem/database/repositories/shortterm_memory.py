@@ -12,6 +12,8 @@ import json
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 
+from psqlpy.extra_types import PgVector
+
 from agent_mem.database.postgres_manager import PostgreSQLManager
 from agent_mem.database.neo4j_manager import Neo4jManager
 from agent_mem.database.models import (
@@ -22,6 +24,15 @@ from agent_mem.database.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_neo4j_datetime(dt):
+    """Convert Neo4j DateTime to Python datetime."""
+    if dt is None:
+        return None
+    if hasattr(dt, "to_native"):
+        return dt.to_native()
+    return dt
 
 
 class ShorttermMemoryRepository:
@@ -234,6 +245,7 @@ class ShorttermMemoryRepository:
         content: str,
         chunk_order: int,
         embedding: Optional[List[float]] = None,
+        section_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ShorttermMemoryChunk:
         """
@@ -247,6 +259,7 @@ class ShorttermMemoryRepository:
             content: Chunk content
             chunk_order: Order of chunk in memory
             embedding: Optional embedding vector
+            section_id: Optional section reference from active memory
             metadata: Optional metadata
 
         Returns:
@@ -254,16 +267,16 @@ class ShorttermMemoryRepository:
         """
         query = """
             INSERT INTO shortterm_memory_chunk 
-            (shortterm_memory_id, external_id, content, chunk_order, embedding, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            (shortterm_memory_id, external_id, content, chunk_order, embedding, section_id, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id, shortterm_memory_id, external_id, content, chunk_order, 
-                      metadata, created_at
+                      section_id, metadata, created_at
         """
 
         # Convert embedding to PostgreSQL vector format if provided
-        embedding_str = None
+        pg_vector = None
         if embedding:
-            embedding_str = f"[{','.join(map(str, embedding))}]"
+            pg_vector = PgVector(embedding)
 
         async with self.postgres.connection() as conn:
             result = await conn.execute(
@@ -273,15 +286,24 @@ class ShorttermMemoryRepository:
                     external_id,
                     content,
                     chunk_order,
-                    embedding_str,
+                    pg_vector,
+                    section_id,
                     metadata or {},
                 ],
             )
 
-            row = result.result()[0]
+            result_data = result.result()
+            logger.debug(f"create_chunk result: {result_data}")
+            if not result_data:
+                raise ValueError("No data returned from INSERT RETURNING")
+
+            row = result_data[0]
             chunk = self._chunk_row_to_model(row)
 
-            logger.info(f"Created shortterm chunk {chunk.id} for memory {shortterm_memory_id}")
+            logger.info(
+                f"Created shortterm chunk {chunk.id} for memory {shortterm_memory_id}"
+                + (f" (section: {section_id})" if section_id else "")
+            )
             return chunk
 
     async def get_chunk_by_id(self, chunk_id: int) -> Optional[ShorttermMemoryChunk]:
@@ -419,6 +441,126 @@ class ShorttermMemoryRepository:
             logger.info(f"Deleted shortterm chunk {chunk_id}")
             return True
 
+    async def get_chunks_by_section_id(
+        self,
+        shortterm_memory_id: int,
+        section_id: str,
+    ) -> List[ShorttermMemoryChunk]:
+        """
+        Get all chunks that reference a specific section.
+
+        Args:
+            shortterm_memory_id: Memory ID
+            section_id: Section ID from active memory
+
+        Returns:
+            List of chunks referencing this section
+        """
+        query = """
+            SELECT id, shortterm_memory_id, external_id, content, chunk_order,
+                   section_id, metadata, created_at
+            FROM shortterm_memory_chunk
+            WHERE shortterm_memory_id = $1 AND section_id = $2
+            ORDER BY chunk_order
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [shortterm_memory_id, section_id])
+            rows = result.result()
+
+            chunks = [self._chunk_row_to_model(row) for row in rows]
+            logger.debug(
+                f"Retrieved {len(chunks)} chunks for section '{section_id}' "
+                f"in memory {shortterm_memory_id}"
+            )
+            return chunks
+
+    async def increment_update_count(self, memory_id: int) -> Optional[ShorttermMemory]:
+        """
+        Increment the update_count for a shortterm memory.
+
+        Called after consolidation from active memory.
+
+        Args:
+            memory_id: Memory ID
+
+        Returns:
+            Updated ShorttermMemory or None if not found
+        """
+        query = """
+            UPDATE shortterm_memory
+            SET update_count = update_count + 1,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING id, external_id, title, summary, update_count, metadata,
+                      created_at
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [memory_id])
+            rows = result.result()
+
+            if not rows:
+                logger.warning(f"Shortterm memory {memory_id} not found")
+                return None
+
+            memory = self._memory_row_to_model(rows[0])
+            logger.info(
+                f"Incremented update_count for shortterm memory {memory_id} "
+                f"to {memory.update_count}"
+            )
+            return memory
+
+    async def reset_update_count(self, memory_id: int) -> bool:
+        """
+        Reset update_count to 0 for a shortterm memory.
+
+        Called after promotion to longterm memory.
+
+        Args:
+            memory_id: Memory ID
+
+        Returns:
+            True if successful, False if not found
+        """
+        query = """
+            UPDATE shortterm_memory
+            SET update_count = 0,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [memory_id])
+            if result.result():
+                logger.info(f"Reset update_count for shortterm memory {memory_id}")
+                return True
+            return False
+
+    async def delete_all_chunks(self, memory_id: int) -> int:
+        """
+        Delete all chunks for a shortterm memory.
+
+        Called after promotion to longterm memory.
+
+        Args:
+            memory_id: Memory ID
+
+        Returns:
+            Number of chunks deleted
+        """
+        query = """
+            DELETE FROM shortterm_memory_chunk
+            WHERE shortterm_memory_id = $1
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [memory_id])
+            # Get the number of deleted rows
+            deleted_count = len(result.result()) if result.result() else 0
+            logger.info(f"Deleted {deleted_count} chunks from shortterm memory {memory_id}")
+            return deleted_count
+
     # =========================================================================
     # SEARCH OPERATIONS
     # =========================================================================
@@ -442,23 +584,23 @@ class ShorttermMemoryRepository:
         Returns:
             List of ShorttermMemoryChunk with similarity_score set
         """
-        embedding_str = f"[{','.join(map(str, query_embedding))}]"
+        pg_vector = PgVector(query_embedding)
 
         query = """
             SELECT 
                 id, shortterm_memory_id, external_id, content, chunk_order, 
                 metadata, created_at,
-                1 - (embedding <=> $1::vector) AS similarity
+                1 - (embedding <=> $1) AS similarity
             FROM shortterm_memory_chunk
             WHERE external_id = $2 
               AND embedding IS NOT NULL
-              AND (1 - (embedding <=> $1::vector)) >= $3
-            ORDER BY embedding <=> $1::vector
+              AND (1 - (embedding <=> $1)) >= $3
+            ORDER BY embedding <=> $1
             LIMIT $4
         """
 
         async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [embedding_str, external_id, min_similarity, limit])
+            result = await conn.execute(query, [pg_vector, external_id, min_similarity, limit])
             rows = result.result()
 
             chunks = []
@@ -491,7 +633,7 @@ class ShorttermMemoryRepository:
             SELECT 
                 id, shortterm_memory_id, external_id, content, chunk_order, 
                 metadata, created_at,
-                bm25_score(content_bm25, tokenize($1, 'bert')) AS score
+                content_bm25 <&> to_bm25query('idx_shortterm_chunk_bm25', tokenize($1, 'bert')) AS score
             FROM shortterm_memory_chunk
             WHERE external_id = $2
               AND content_bm25 IS NOT NULL
@@ -535,20 +677,20 @@ class ShorttermMemoryRepository:
         Returns:
             List of ShorttermMemoryChunk with combined scores
         """
-        embedding_str = f"[{','.join(map(str, query_embedding))}]"
+        pg_vector = PgVector(query_embedding)
 
         query = """
             WITH vector_results AS (
                 SELECT 
                     id,
-                    1 - (embedding <=> $1::vector) AS vector_score
+                    1 - (embedding <=> $1) AS vector_score
                 FROM shortterm_memory_chunk
                 WHERE external_id = $2 AND embedding IS NOT NULL
             ),
             bm25_results AS (
                 SELECT 
                     id,
-                    bm25_score(content_bm25, tokenize($3, 'bert')) AS bm25_score
+                    content_bm25 <&> to_bm25query('idx_shortterm_chunk_bm25', tokenize($3, 'bert')) AS bm25_score
                 FROM shortterm_memory_chunk
                 WHERE external_id = $2 AND content_bm25 IS NOT NULL
             )
@@ -569,7 +711,7 @@ class ShorttermMemoryRepository:
             result = await conn.execute(
                 query,
                 [
-                    embedding_str,
+                    pg_vector,
                     external_id,
                     query_text,
                     vector_weight,
@@ -578,11 +720,36 @@ class ShorttermMemoryRepository:
                 ],
             )
             rows = result.result()
+            logger.debug(f"hybrid_search got {len(rows)} rows")
 
             chunks = []
             for row in rows:
-                chunk = self._chunk_row_to_model(row[:7])
-                chunk.similarity_score = float(row[7])  # Store combined score
+                logger.debug(f"Processing row: {row}")
+                if isinstance(row, dict):
+                    # Handle dict format
+                    if "id" not in row:
+                        logger.error(f"Invalid row format in hybrid_search: {row}")
+                        continue
+                    chunk = self._chunk_row_to_model(
+                        {
+                            "id": row["id"],
+                            "shortterm_memory_id": row["shortterm_memory_id"],
+                            "external_id": row["external_id"],
+                            "content": row["content"],
+                            "chunk_order": row["chunk_order"],
+                            "section_id": row.get("section_id"),
+                            "metadata": row["metadata"],
+                            "created_at": row["created_at"],
+                        }
+                    )
+                    chunk.similarity_score = float(row["combined_score"])
+                elif isinstance(row, (list, tuple)) and len(row) >= 8:
+                    # Handle tuple format
+                    chunk = self._chunk_row_to_model(row[:7])
+                    chunk.similarity_score = float(row[7])  # Store combined score
+                else:
+                    logger.error(f"Invalid row format in hybrid_search: {row}")
+                    continue
                 chunks.append(chunk)
 
             logger.debug(f"Hybrid search found {len(chunks)} chunks for {external_id}")
@@ -597,7 +764,7 @@ class ShorttermMemoryRepository:
         external_id: str,
         shortterm_memory_id: int,
         name: str,
-        entity_type: str,
+        types: List[str],  # Changed from entity_type: str to types: List[str]
         description: Optional[str] = None,
         confidence: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
@@ -609,7 +776,7 @@ class ShorttermMemoryRepository:
             external_id: Agent identifier
             shortterm_memory_id: Parent memory ID
             name: Entity name
-            entity_type: Entity type (e.g., 'Person', 'Technology', 'Concept')
+            types: Entity types (e.g., ['Person', 'Developer'])
             description: Optional description
             confidence: Confidence score (0-1)
             metadata: Optional metadata
@@ -619,20 +786,23 @@ class ShorttermMemoryRepository:
         """
         now = datetime.now(timezone.utc)
 
+        # Convert metadata to JSON string for Neo4j storage
+        metadata_json = json.dumps(metadata or {})
+
         query = """
         CREATE (e:ShorttermEntity {
             external_id: $external_id,
             shortterm_memory_id: $shortterm_memory_id,
             name: $name,
-            type: $entity_type,
+            types: $types,
             description: $description,
             confidence: $confidence,
             first_seen: $now,
             last_seen: $now,
-            metadata: $metadata
+            metadata: $metadata_json
         })
-        RETURN id(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
-               e.name AS name, e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
+               e.name AS name, e.types AS types, e.description AS description,
                e.confidence AS confidence, e.first_seen AS first_seen, 
                e.last_seen AS last_seen, e.metadata AS metadata
         """
@@ -643,28 +813,31 @@ class ShorttermMemoryRepository:
                 external_id=external_id,
                 shortterm_memory_id=shortterm_memory_id,
                 name=name,
-                entity_type=entity_type,
+                types=types,
                 description=description,
                 confidence=confidence,
                 now=now,
-                metadata=metadata or {},
+                metadata_json=metadata_json,
             )
             record = await result.single()
+
+            # Parse metadata JSON back to dict
+            metadata_dict = json.loads(record["metadata"]) if record["metadata"] else {}
 
             entity = ShorttermEntity(
                 id=record["id"],
                 external_id=record["external_id"],
                 shortterm_memory_id=record["shortterm_memory_id"],
                 name=record["name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
-                first_seen=record["first_seen"],
-                last_seen=record["last_seen"],
-                metadata=record["metadata"],
+                first_seen=_convert_neo4j_datetime(record["first_seen"]),
+                last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                metadata=metadata_dict,
             )
 
-            logger.info(f"Created shortterm entity {entity.id}: {name}")
+            logger.info(f"Created shortterm entity {entity.id}: {name} with types {types}")
             return entity
 
     async def get_entity(self, entity_id: int) -> Optional[ShorttermEntity]:
@@ -672,16 +845,16 @@ class ShorttermMemoryRepository:
         Get an entity by ID.
 
         Args:
-            entity_id: Entity node ID
+            entity_id: Entity node ID (elementId)
 
         Returns:
             ShorttermEntity or None if not found
         """
         query = """
         MATCH (e:ShorttermEntity)
-        WHERE id(e) = $entity_id
-        RETURN id(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
-               e.name AS name, e.type AS type, e.description AS description,
+        WHERE elementId(e) = $entity_id
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
+               e.name AS name, e.types AS types, e.description AS description,
                e.confidence AS confidence, e.first_seen AS first_seen, 
                e.last_seen AS last_seen, e.metadata AS metadata
         """
@@ -693,17 +866,20 @@ class ShorttermMemoryRepository:
             if not record:
                 return None
 
+            # Parse metadata JSON back to dict
+            metadata_dict = json.loads(record["metadata"]) if record["metadata"] else {}
+
             return ShorttermEntity(
                 id=record["id"],
                 external_id=record["external_id"],
                 shortterm_memory_id=record["shortterm_memory_id"],
                 name=record["name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
-                first_seen=record["first_seen"],
-                last_seen=record["last_seen"],
-                metadata=record["metadata"],
+                first_seen=_convert_neo4j_datetime(record["first_seen"]),
+                last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                metadata=metadata_dict,
             )
 
     async def get_entities_by_memory(self, shortterm_memory_id: int) -> List[ShorttermEntity]:
@@ -718,8 +894,8 @@ class ShorttermMemoryRepository:
         """
         query = """
         MATCH (e:ShorttermEntity {shortterm_memory_id: $shortterm_memory_id})
-        RETURN id(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
-               e.name AS name, e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
+               e.name AS name, e.types AS types, e.description AS description,
                e.confidence AS confidence, e.first_seen AS first_seen, 
                e.last_seen AS last_seen, e.metadata AS metadata
         ORDER BY e.confidence DESC
@@ -727,7 +903,8 @@ class ShorttermMemoryRepository:
 
         async with self.neo4j.session() as session:
             result = await session.run(query, shortterm_memory_id=shortterm_memory_id)
-            records = await result.list()
+            # Use list comprehension with async iteration instead of .list()
+            records = [record async for record in result]
 
             entities = [
                 ShorttermEntity(
@@ -735,12 +912,12 @@ class ShorttermMemoryRepository:
                     external_id=record["external_id"],
                     shortterm_memory_id=record["shortterm_memory_id"],
                     name=record["name"],
-                    type=record["type"],
+                    types=record["types"] or [],
                     description=record["description"],
                     confidence=record["confidence"],
-                    first_seen=record["first_seen"],
-                    last_seen=record["last_seen"],
-                    metadata=record["metadata"],
+                    first_seen=_convert_neo4j_datetime(record["first_seen"]),
+                    last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                    metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
             ]
@@ -754,6 +931,7 @@ class ShorttermMemoryRepository:
         self,
         entity_id: int,
         name: Optional[str] = None,
+        types: Optional[List[str]] = None,  # Added types parameter
         description: Optional[str] = None,
         confidence: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -762,8 +940,9 @@ class ShorttermMemoryRepository:
         Update an entity.
 
         Args:
-            entity_id: Entity node ID
+            entity_id: Entity node ID (elementId)
             name: New name (optional)
+            types: New types list (optional)
             description: New description (optional)
             confidence: New confidence (optional)
             metadata: New metadata (optional)
@@ -778,6 +957,10 @@ class ShorttermMemoryRepository:
             updates.append("e.name = $name")
             params["name"] = name
 
+        if types is not None:
+            updates.append("e.types = $types")
+            params["types"] = types
+
         if description is not None:
             updates.append("e.description = $description")
             params["description"] = description
@@ -787,8 +970,8 @@ class ShorttermMemoryRepository:
             params["confidence"] = confidence
 
         if metadata is not None:
-            updates.append("e.metadata = $metadata")
-            params["metadata"] = metadata
+            updates.append("e.metadata = $metadata_json")
+            params["metadata_json"] = json.dumps(metadata)
 
         if not updates:
             return await self.get_entity(entity_id)
@@ -797,10 +980,10 @@ class ShorttermMemoryRepository:
 
         query = f"""
         MATCH (e:ShorttermEntity)
-        WHERE id(e) = $entity_id
+        WHERE elementId(e) = $entity_id
         SET {", ".join(updates)}
-        RETURN id(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
-               e.name AS name, e.type AS type, e.description AS description,
+        RETURN elementId(e) AS id, e.external_id AS external_id, e.shortterm_memory_id AS shortterm_memory_id,
+               e.name AS name, e.types AS types, e.description AS description,
                e.confidence AS confidence, e.first_seen AS first_seen, 
                e.last_seen AS last_seen, e.metadata AS metadata
         """
@@ -817,12 +1000,12 @@ class ShorttermMemoryRepository:
                 external_id=record["external_id"],
                 shortterm_memory_id=record["shortterm_memory_id"],
                 name=record["name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
-                first_seen=record["first_seen"],
-                last_seen=record["last_seen"],
-                metadata=record["metadata"],
+                first_seen=_convert_neo4j_datetime(record["first_seen"]),
+                last_seen=_convert_neo4j_datetime(record["last_seen"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
             logger.info(f"Updated shortterm entity {entity_id}")
@@ -833,14 +1016,14 @@ class ShorttermMemoryRepository:
         Delete an entity and all its relationships.
 
         Args:
-            entity_id: Entity node ID
+            entity_id: Entity node ID (elementId)
 
         Returns:
             True if deleted
         """
         query = """
         MATCH (e:ShorttermEntity)
-        WHERE id(e) = $entity_id
+        WHERE elementId(e) = $entity_id
         DETACH DELETE e
         """
 
@@ -859,7 +1042,7 @@ class ShorttermMemoryRepository:
         shortterm_memory_id: int,
         from_entity_id: int,
         to_entity_id: int,
-        relationship_type: str,
+        types: List[str],  # Changed from relationship_type: str to types: List[str]
         description: Optional[str] = None,
         confidence: float = 0.5,
         strength: float = 0.5,
@@ -871,9 +1054,9 @@ class ShorttermMemoryRepository:
         Args:
             external_id: Agent identifier
             shortterm_memory_id: Parent memory ID
-            from_entity_id: Source entity node ID
-            to_entity_id: Target entity node ID
-            relationship_type: Relationship type (e.g., 'USES', 'DEPENDS_ON')
+            from_entity_id: Source entity node ID (elementId)
+            to_entity_id: Target entity node ID (elementId)
+            types: Relationship types (e.g., ['USES', 'DEPENDS_ON'])
             description: Optional description
             confidence: Confidence score (0-1)
             strength: Relationship strength (0-1)
@@ -884,24 +1067,29 @@ class ShorttermMemoryRepository:
         """
         now = datetime.now(timezone.utc)
 
+        # Convert metadata to JSON string for Neo4j storage
+        metadata_json = json.dumps(metadata or {})
+
         query = """
-        MATCH (from:ShorttermEntity), (to:ShorttermEntity)
-        WHERE id(from) = $from_entity_id AND id(to) = $to_entity_id
-        CREATE (from)-[r:RELATES_TO {
+        MATCH (from:ShorttermEntity)
+        WHERE elementId(from) = $from_entity_id
+        MATCH (to:ShorttermEntity)
+        WHERE elementId(to) = $to_entity_id
+        CREATE (from)-[r:SHORTTERM_RELATES {
             external_id: $external_id,
             shortterm_memory_id: $shortterm_memory_id,
-            type: $relationship_type,
+            types: $types,
             description: $description,
             confidence: $confidence,
             strength: $strength,
             first_observed: $now,
             last_observed: $now,
-            metadata: $metadata
+            metadata: $metadata_json
         }]->(to)
-        RETURN id(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        RETURN elementId(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.first_observed AS first_observed, r.last_observed AS last_observed,
                r.metadata AS metadata
@@ -914,14 +1102,17 @@ class ShorttermMemoryRepository:
                 shortterm_memory_id=shortterm_memory_id,
                 from_entity_id=from_entity_id,
                 to_entity_id=to_entity_id,
-                relationship_type=relationship_type,
+                types=types,
                 description=description,
                 confidence=confidence,
                 strength=strength,
                 now=now,
-                metadata=metadata or {},
+                metadata_json=metadata_json,
             )
             record = await result.single()
+
+            # Parse metadata JSON back to dict
+            metadata_dict = json.loads(record["metadata"]) if record["metadata"] else {}
 
             relationship = ShorttermRelationship(
                 id=record["id"],
@@ -931,18 +1122,18 @@ class ShorttermMemoryRepository:
                 to_entity_id=record["to_entity_id"],
                 from_entity_name=record["from_entity_name"],
                 to_entity_name=record["to_entity_name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 strength=record["strength"],
-                first_observed=record["first_observed"],
-                last_observed=record["last_observed"],
-                metadata=record["metadata"],
+                first_observed=_convert_neo4j_datetime(record["first_observed"]),
+                last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                metadata=metadata_dict,
             )
 
             logger.info(
                 f"Created shortterm relationship {relationship.id}: "
-                f"{record['from_entity_name']} -> {record['to_entity_name']}"
+                f"{record['from_entity_name']} -> {record['to_entity_name']} with types {types}"
             )
             return relationship
 
@@ -957,12 +1148,12 @@ class ShorttermMemoryRepository:
             ShorttermRelationship or None if not found
         """
         query = """
-        MATCH (from:ShorttermEntity)-[r:RELATES_TO]->(to:ShorttermEntity)
-        WHERE id(r) = $relationship_id
-        RETURN id(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        MATCH (from:ShorttermEntity)-[r:SHORTTERM_RELATES]->(to:ShorttermEntity)
+        WHERE elementId(r) = $relationship_id
+        RETURN elementId(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.first_observed AS first_observed, r.last_observed AS last_observed,
                r.metadata AS metadata
@@ -983,13 +1174,13 @@ class ShorttermMemoryRepository:
                 to_entity_id=record["to_entity_id"],
                 from_entity_name=record["from_entity_name"],
                 to_entity_name=record["to_entity_name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 strength=record["strength"],
-                first_observed=record["first_observed"],
-                last_observed=record["last_observed"],
-                metadata=record["metadata"],
+                first_observed=_convert_neo4j_datetime(record["first_observed"]),
+                last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
     async def get_relationships_by_memory(
@@ -1005,11 +1196,11 @@ class ShorttermMemoryRepository:
             List of ShorttermRelationship objects
         """
         query = """
-        MATCH (from:ShorttermEntity)-[r:RELATES_TO {shortterm_memory_id: $shortterm_memory_id}]->(to:ShorttermEntity)
-        RETURN id(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        MATCH (from:ShorttermEntity)-[r:SHORTTERM_RELATES {shortterm_memory_id: $shortterm_memory_id}]->(to:ShorttermEntity)
+        RETURN elementId(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.first_observed AS first_observed, r.last_observed AS last_observed,
                r.metadata AS metadata
@@ -1018,7 +1209,7 @@ class ShorttermMemoryRepository:
 
         async with self.neo4j.session() as session:
             result = await session.run(query, shortterm_memory_id=shortterm_memory_id)
-            records = await result.list()
+            records = [record async for record in result]
 
             relationships = [
                 ShorttermRelationship(
@@ -1029,13 +1220,13 @@ class ShorttermMemoryRepository:
                     to_entity_id=record["to_entity_id"],
                     from_entity_name=record["from_entity_name"],
                     to_entity_name=record["to_entity_name"],
-                    type=record["type"],
+                    types=record["types"] or [],
                     description=record["description"],
                     confidence=record["confidence"],
                     strength=record["strength"],
-                    first_observed=record["first_observed"],
-                    last_observed=record["last_observed"],
-                    metadata=record["metadata"],
+                    first_observed=_convert_neo4j_datetime(record["first_observed"]),
+                    last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                    metadata=json.loads(record["metadata"]) if record["metadata"] else {},
                 )
                 for record in records
             ]
@@ -1048,6 +1239,7 @@ class ShorttermMemoryRepository:
     async def update_relationship(
         self,
         relationship_id: int,
+        types: Optional[List[str]] = None,
         description: Optional[str] = None,
         confidence: Optional[float] = None,
         strength: Optional[float] = None,
@@ -1058,6 +1250,7 @@ class ShorttermMemoryRepository:
 
         Args:
             relationship_id: Relationship ID
+            types: New types (optional)
             description: New description (optional)
             confidence: New confidence (optional)
             strength: New strength (optional)
@@ -1068,6 +1261,10 @@ class ShorttermMemoryRepository:
         """
         updates = []
         params = {"relationship_id": relationship_id, "now": datetime.now(timezone.utc)}
+
+        if types is not None:
+            updates.append("r.types = $types")
+            params["types"] = types
 
         if description is not None:
             updates.append("r.description = $description")
@@ -1091,13 +1288,13 @@ class ShorttermMemoryRepository:
         updates.append("r.last_observed = $now")
 
         query = f"""
-        MATCH (from:ShorttermEntity)-[r:RELATES_TO]->(to:ShorttermEntity)
-        WHERE id(r) = $relationship_id
+        MATCH (from:ShorttermEntity)-[r:SHORTTERM_RELATES]->(to:ShorttermEntity)
+        WHERE elementId(r) = $relationship_id
         SET {", ".join(updates)}
-        RETURN id(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
-               id(from) AS from_entity_id, id(to) AS to_entity_id,
+        RETURN elementId(r) AS id, r.external_id AS external_id, r.shortterm_memory_id AS shortterm_memory_id,
+               elementId(from) AS from_entity_id, elementId(to) AS to_entity_id,
                from.name AS from_entity_name, to.name AS to_entity_name,
-               r.type AS type, r.description AS description,
+               r.types AS types, r.description AS description,
                r.confidence AS confidence, r.strength AS strength,
                r.first_observed AS first_observed, r.last_observed AS last_observed,
                r.metadata AS metadata
@@ -1118,13 +1315,13 @@ class ShorttermMemoryRepository:
                 to_entity_id=record["to_entity_id"],
                 from_entity_name=record["from_entity_name"],
                 to_entity_name=record["to_entity_name"],
-                type=record["type"],
+                types=record["types"] or [],
                 description=record["description"],
                 confidence=record["confidence"],
                 strength=record["strength"],
-                first_observed=record["first_observed"],
-                last_observed=record["last_observed"],
-                metadata=record["metadata"],
+                first_observed=_convert_neo4j_datetime(record["first_observed"]),
+                last_observed=_convert_neo4j_datetime(record["last_observed"]),
+                metadata=json.loads(record["metadata"]) if record["metadata"] else {},
             )
 
             logger.info(f"Updated shortterm relationship {relationship_id}")
@@ -1141,8 +1338,8 @@ class ShorttermMemoryRepository:
             True if deleted
         """
         query = """
-        MATCH ()-[r:RELATES_TO]->()
-        WHERE id(r) = $relationship_id
+        MATCH ()-[r:SHORTTERM_RELATES]->()
+        WHERE elementId(r) = $relationship_id
         DELETE r
         """
 
@@ -1157,23 +1354,54 @@ class ShorttermMemoryRepository:
 
     def _memory_row_to_model(self, row) -> ShorttermMemory:
         """Convert database row to ShorttermMemory model."""
-        return ShorttermMemory(
-            id=row[0],
-            external_id=row[1],
-            title=row[2],
-            summary=row[3],
-            metadata=row[4] if isinstance(row[4], dict) else {},
-            created_at=row[5],
-            last_updated=row[6],
-            chunks=[],  # Populated separately if needed
-        )
+        # Handle both dict and list/tuple row formats
+        if isinstance(row, dict):
+            return ShorttermMemory(
+                id=row.get("id"),
+                external_id=row.get("external_id"),
+                title=row.get("title"),
+                summary=row.get("summary"),
+                update_count=row.get("update_count", 0),
+                metadata=row.get("metadata", {}),
+                created_at=row.get("created_at", datetime.now(timezone.utc)),
+                last_updated=row.get("last_updated", datetime.now(timezone.utc)),
+                chunks=[],  # Populated separately if needed
+            )
+        else:
+            # Handle list/tuple format
+            return ShorttermMemory(
+                id=row[0],
+                external_id=row[1],
+                title=row[2],
+                summary=row[3],
+                update_count=row[4] if len(row) > 4 else 0,
+                metadata=row[5] if len(row) > 5 and isinstance(row[5], dict) else {},
+                created_at=row[6] if len(row) > 6 else datetime.now(timezone.utc),
+                last_updated=row[7] if len(row) > 7 else datetime.now(timezone.utc),
+                chunks=[],  # Populated separately if needed
+            )
 
     def _chunk_row_to_model(self, row) -> ShorttermMemoryChunk:
         """Convert database row to ShorttermMemoryChunk model."""
-        return ShorttermMemoryChunk(
-            id=row[0],
-            shortterm_memory_id=row[1],
-            content=row[3],
-            chunk_order=row[4],
-            metadata=row[5] if isinstance(row[5], dict) else {},
-        )
+        # Handle both dict (psqlpy) and tuple/list formats
+        if isinstance(row, dict):
+            return ShorttermMemoryChunk(
+                id=row["id"],
+                shortterm_memory_id=row["shortterm_memory_id"],
+                content=row["content"],
+                chunk_order=row.get("chunk_order", 0),
+                section_id=row.get("section_id"),
+                metadata=row.get("metadata", {}),
+            )
+        elif isinstance(row, (list, tuple)):
+            # Legacy tuple format
+            return ShorttermMemoryChunk(
+                id=row[0],
+                shortterm_memory_id=row[1],
+                content=row[3] if len(row) > 3 else row[2],
+                chunk_order=row[4] if len(row) > 4 else 0,
+                section_id=row[5] if len(row) > 5 else None,
+                metadata=row[6] if len(row) > 6 and isinstance(row[6], dict) else {},
+            )
+        else:
+            raise ValueError(f"Unsupported row format: {type(row)}")

@@ -15,19 +15,21 @@ A standalone Python package for hierarchical memory management in AI agents. Pro
 
 ## ✅ Current Status
 
-**Overall Progress**: 58% complete (48/82 major tasks)
+**Overall Progress**: 89% complete (98/110 major tasks completed)
 
 **Completed Phases**:
 - ✅ **Phase 1**: Core infrastructure (PostgreSQL + Neo4j, embedding service)
 - ✅ **Phase 2**: Memory tiers (Active, Shortterm, Longterm repositories)
 - ✅ **Phase 3**: Memory Manager (consolidation, promotion, retrieval)
 - ✅ **Phase 4**: AI Agents (ER Extractor, Memory Retrieve, Memory Update)
+- ✅ **Phase 5**: Testing (27 test suites - needs rewrite to match implementation)
+- ✅ **Phase 9**: Streamlit UI (100% - Web UI fully functional)
+- ✅ **Phase 10**: MCP Server (100% - Claude Desktop integration ready)
 
 **In Progress**:
-- 🧪 **Phase 5**: Testing (27 test suites planned)
-- 📖 **Phase 6**: Examples and demonstrations
-- 📚 **Phase 7**: Complete API documentation
-- 🚀 **Phase 8**: Production deployment
+- 📖 **Phase 6**: Examples and demonstrations (20% complete)
+- 📚 **Phase 7**: Complete API documentation (50% complete)
+- 🚀 **Phase 8**: Production deployment (not started)
 
 **See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed progress**
 
@@ -215,9 +217,9 @@ EMBEDDING_MODEL=nomic-embed-text
 VECTOR_DIMENSION=768
 
 # Agent Models (Optional - defaults to Gemini)
-MEMORY_UPDATE_AGENT_MODEL=google-gla:gemini-2.0-flash
-MEMORIZER_AGENT_MODEL=google-gla:gemini-2.0-flash
-MEMORY_RETRIEVE_AGENT_MODEL=google-gla:gemini-2.0-flash
+MEMORY_UPDATE_AGENT_MODEL=google:gemini-2.0-flash
+MEMORIZER_AGENT_MODEL=google:gemini-2.0-flash
+MEMORY_RETRIEVE_AGENT_MODEL=google:gemini-2.0-flash
 ```
 
 ### Basic Usage
@@ -423,8 +425,9 @@ Close all database connections.
 - **Purpose**: Consolidated knowledge base
 - **Storage**: PostgreSQL (vectors + BM25) + Neo4j (entities/relationships)
 - **Lifetime**: Long (persistent)
-- **Updates**: Rare (promoted from shortterm)
+- **Updates**: Rare (promoted from shortterm with intelligent merging)
 - **Use Case**: Core knowledge, patterns, historical decisions
+- **Promotion**: Automatic with type merging, confidence recalculation, and state history tracking
 
 ## Advanced Usage
 
@@ -455,6 +458,41 @@ manager = MemoryManager(external_id="agent-123")
 await manager.consolidate_to_shortterm(active_memory_id=1)
 await manager.promote_to_longterm(shortterm_memory_id=5)
 ```
+
+### Intelligent Promotion to Longterm
+
+When shortterm memories are promoted to longterm, the system performs intelligent merging:
+
+**Entity Merging:**
+- Matches entities by name (case-insensitive)
+- Merges types from both memories (union operation)
+- Recalculates confidence using weighted average (favors higher confidence)
+- Tracks complete state history in metadata
+
+**Relationship Merging:**
+- Matches relationships by source and target entity names
+- Merges types from both memories (union operation)
+- Recalculates confidence and strength using weighted averages
+- Tracks complete state history in metadata
+
+**State History Example:**
+```python
+# Each entity/relationship tracks its evolution in metadata.state_history:
+{
+    "state_history": [
+        {
+            "timestamp": "2025-10-05T10:30:00Z",
+            "source": "shortterm_promotion",
+            "old_types": ["Person", "Developer"],
+            "new_types": ["Person", "Developer", "Team Lead"],
+            "old_confidence": 0.75,
+            "new_confidence": 0.82
+        }
+    ]
+}
+```
+
+This ensures no information is lost during promotion and provides a complete audit trail.
 
 ### Working with Entities and Relationships
 

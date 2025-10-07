@@ -5,6 +5,7 @@ Note: These are unit tests with mocked dependencies.
 Integration tests are in test_integration.py.
 """
 
+import asyncio
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -137,14 +138,13 @@ class TestMemoryManagerActiveMemory:
                 updated_at=datetime.now(timezone.utc),
             )
 
-            mock_repo.update_section = AsyncMock(return_value=updated_memory)
+            mock_repo.update_sections = AsyncMock(return_value=updated_memory)
             manager.active_repo = mock_repo
 
-            result = await manager.update_active_memory_section(
+            result = await manager.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                section_id="summary",
-                new_content="Updated",
+                sections=[{"section_id": "summary", "new_content": "Updated"}],
             )
 
             assert result == updated_memory
@@ -156,45 +156,94 @@ class TestMemoryManagerActiveMemory:
             patch("agent_mem.services.memory_manager.PostgreSQLManager"),
             patch("agent_mem.services.memory_manager.Neo4jManager"),
             patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("asyncio.create_task") as mock_create_task,
         ):
 
             manager = MemoryManager(test_config)
             manager._initialized = True  # Bypass initialization check
 
-            # Replace config with a MagicMock that allows attribute assignment
-            mock_config = MagicMock()
-            mock_config.consolidation_threshold = 3
-            manager.config = mock_config
-
-            # Mock consolidation method
-            manager._consolidate_to_shortterm = AsyncMock()
+            # Configure consolidation threshold
+            test_config.avg_section_update_count_for_consolidation = 3.0
 
             # Mock the repository
             mock_repo = MagicMock()
             memory_id = 1
+            # 2 sections with 3 updates each = 6 total updates (>= 3*2=6 threshold)
             updated_memory = ActiveMemory(
                 id=memory_id,
                 external_id="test-123",
                 title="Test",
                 template_content="# Template",
-                sections={"summary": {"content": "Updated", "update_count": 4}},
+                sections={
+                    "summary": {"content": "Updated", "update_count": 3},
+                    "context": {"content": "Context", "update_count": 3},
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
 
-            mock_repo.update_section = AsyncMock(return_value=updated_memory)
+            mock_repo.update_sections = AsyncMock(return_value=updated_memory)
+            mock_repo.reset_all_update_counts = AsyncMock()
             manager.active_repo = mock_repo
 
-            await manager.update_active_memory_section(
+            await manager.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                section_id="summary",
-                new_content="Updated",
+                sections=[{"section_id": "summary", "new_content": "Updated"}],
             )
 
-            # Check that consolidation was triggered
-            manager._consolidate_to_shortterm.assert_called_once_with("test-123", memory_id)
+            # Check that consolidation task was created
+            mock_create_task.assert_called_once()
+            # Check that update counts were reset
+            mock_repo.reset_all_update_counts.assert_called_once_with(memory_id)
+
+    @pytest.mark.asyncio
+    async def test_update_active_memory_below_threshold(self, test_config):
+        """Test updating active memory below consolidation threshold."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Configure consolidation threshold
+            test_config.avg_section_update_count_for_consolidation = 5.0
+
+            # Mock the repository
+            mock_repo = MagicMock()
+            memory_id = 1
+            # 2 sections with 2 updates each = 4 total updates (< 5*2=10 threshold)
+            updated_memory = ActiveMemory(
+                id=memory_id,
+                external_id="test-123",
+                title="Test",
+                template_content="# Template",
+                sections={
+                    "summary": {"content": "Updated", "update_count": 2},
+                    "context": {"content": "Context", "update_count": 2},
+                },
+                metadata={},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
+            mock_repo.update_sections = AsyncMock(return_value=updated_memory)
+            manager.active_repo = mock_repo
+
+            result = await manager.update_active_memory_sections(
+                external_id="test-123",
+                memory_id=memory_id,
+                sections=[{"section_id": "summary", "new_content": "Updated"}],
+            )
+
+            # Check that consolidation was NOT triggered
+            mock_create_task.assert_not_called()
+            assert result == updated_memory
 
     @pytest.mark.asyncio
     async def test_delete_active_memory_success(self, test_config):
@@ -360,6 +409,88 @@ class TestMemoryManagerConsolidation:
             assert hasattr(manager, "_consolidate_to_shortterm")
             assert callable(manager._consolidate_to_shortterm)
 
+    @pytest.mark.asyncio
+    async def test_consolidate_with_lock_success(self, test_config):
+        """Test successful consolidation with lock mechanism."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Mock the internal consolidation method
+            manager._consolidate_to_shortterm = AsyncMock()
+
+            # Test consolidation with lock
+            await manager._consolidate_with_lock("test-agent", 123)
+
+            # Verify consolidation was called
+            manager._consolidate_to_shortterm.assert_called_once_with("test-agent", 123)
+
+            # Verify lock was cleaned up (no longer in locks dict)
+            assert 123 not in manager._consolidation_locks
+
+    @pytest.mark.asyncio
+    async def test_consolidate_with_lock_concurrent_access(self, test_config):
+        """Test that concurrent consolidation attempts are handled correctly."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Create a slow consolidation method
+            consolidation_called_count = 0
+
+            async def slow_consolidation(external_id, memory_id):
+                nonlocal consolidation_called_count
+                consolidation_called_count += 1
+                await asyncio.sleep(0.1)  # Simulate slow operation
+
+            manager._consolidate_to_shortterm = slow_consolidation
+
+            # Start two consolidation tasks concurrently for same memory
+            task1 = asyncio.create_task(manager._consolidate_with_lock("test-agent", 123))
+            task2 = asyncio.create_task(manager._consolidate_with_lock("test-agent", 123))
+
+            # Wait for both to complete
+            await asyncio.gather(task1, task2)
+
+            # Only one consolidation should have been executed
+            assert consolidation_called_count == 1
+
+    @pytest.mark.asyncio
+    async def test_consolidate_with_lock_error_handling(self, test_config):
+        """Test error handling in consolidation with lock."""
+        with (
+            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
+            patch("agent_mem.services.memory_manager.Neo4jManager"),
+            patch("agent_mem.services.memory_manager.EmbeddingService"),
+        ):
+
+            manager = MemoryManager(test_config)
+            manager._initialized = True  # Bypass initialization check
+
+            # Mock consolidation to raise an exception
+            manager._consolidate_to_shortterm = AsyncMock(
+                side_effect=Exception("Consolidation failed")
+            )
+
+            # This should not raise an exception
+            await manager._consolidate_with_lock("test-agent", 123)
+
+            # Verify consolidation was attempted
+            manager._consolidate_to_shortterm.assert_called_once_with("test-agent", 123)
+
+            # Verify lock was cleaned up even after error
+            assert 123 not in manager._consolidation_locks
+
 
 class TestMemoryManagerPromotion:
     """Test promotion workflow."""
@@ -427,78 +558,6 @@ class TestMemoryManagerRetrieval:
 
 class TestMemoryManagerHelpers:
     """Test helper methods."""
-
-    @pytest.mark.asyncio
-    async def test_calculate_semantic_similarity(self, test_config):
-        """Test semantic similarity calculation."""
-        with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService") as mock_embedding,
-        ):
-
-            # Setup mock embedding service
-            mock_embedding_instance = mock_embedding.return_value
-            mock_embedding_instance.get_embedding = AsyncMock(
-                side_effect=[
-                    [1.0, 0.0, 0.0],  # First embedding
-                    [1.0, 0.0, 0.0],  # Second embedding
-                ]
-            )
-
-            manager = MemoryManager(test_config)
-
-            # Test calculation with text inputs
-            similarity = await manager._calculate_semantic_similarity("test1", "test2")
-
-            assert 0.0 <= similarity <= 1.0
-
-    def test_calculate_entity_overlap_exact_match(self, test_config):
-        """Test entity overlap calculation with exact match."""
-        with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
-        ):
-
-            manager = MemoryManager(test_config)
-
-            # Create mock entities with name and type attributes
-            entity1 = MagicMock()
-            entity1.name = "Python"
-            entity1.type = "TECHNOLOGY"
-
-            entity2 = MagicMock()
-            entity2.name = "Python"
-            entity2.type = "TECHNOLOGY"
-
-            overlap = manager._calculate_entity_overlap(entity1, entity2)
-
-            assert overlap == 1.0
-
-    def test_calculate_entity_overlap_no_match(self, test_config):
-        """Test entity overlap with no match."""
-        with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
-        ):
-
-            manager = MemoryManager(test_config)
-
-            # Create mock entities with different names
-            entity1 = MagicMock()
-            entity1.name = "Python"
-            entity1.type = "TECHNOLOGY"
-
-            entity2 = MagicMock()
-            entity2.name = "Java"
-            entity2.type = "TECHNOLOGY"
-
-            overlap = manager._calculate_entity_overlap(entity1, entity2)
-
-            # Same type but different name = 0.5 (partial match)
-            assert overlap == 0.5
 
     def test_calculate_importance_with_multiplier(self, test_config):
         """Test importance calculation with type multiplier."""

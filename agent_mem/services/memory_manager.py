@@ -7,7 +7,7 @@ Coordinates consolidation, promotion, and retrieval across memory tiers.
 
 import logging
 import asyncio
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone
 
 from agent_mem.config import Config
@@ -26,13 +26,16 @@ from agent_mem.database.models import (
     ShorttermMemory,
     ShorttermMemoryChunk,
     LongtermMemoryChunk,
+    ConflictSection,
+    ConsolidationConflicts,
+    ConflictEntityDetail,
+    ConflictRelationshipDetail,
 )
 from agent_mem.services.embedding import EmbeddingService
 from agent_mem.utils.helpers import chunk_text
 from agent_mem.agents import (
     MemoryRetrieveAgent,
     extract_entities_and_relationships,
-    consolidate_memory,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,10 +71,13 @@ class MemoryManager:
         # Repositories (initialized after database connection)
         self.active_repo: Optional[ActiveMemoryRepository] = None
         self.shortterm_repo: Optional[ShorttermMemoryRepository] = None
+        self.longterm_repo: Optional[LongtermMemoryRepository] = None
 
         # Consolidation locks to prevent concurrent consolidation
         self._consolidation_locks: Dict[int, asyncio.Lock] = {}
-        self.longterm_repo: Optional[LongtermMemoryRepository] = None
+
+        # Track background consolidation tasks
+        self._background_tasks: Set[asyncio.Task] = set()
 
         self._initialized = False
 
@@ -114,6 +120,15 @@ class MemoryManager:
             return
 
         logger.info("Closing MemoryManager connections...")
+
+        # Wait for all background consolidation tasks to complete
+        if self._background_tasks:
+            logger.info(
+                f"Waiting for {len(self._background_tasks)} background tasks to complete..."
+            )
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            self._background_tasks.clear()
+            logger.info("All background tasks completed")
 
         await self.postgres_manager.close()
         await self.neo4j_manager.close()
@@ -250,11 +265,10 @@ class MemoryManager:
             )
 
             # Start consolidation in background (non-blocking)
-            asyncio.create_task(self._consolidate_with_lock(external_id, memory.id))
-
-            # Reset active memory section update counts
-            await self.active_repo.reset_all_update_counts(memory.id)
-            logger.info(f"Reset section update counts for active memory {memory.id}")
+            task = asyncio.create_task(self._consolidate_with_lock(external_id, memory.id))
+            self._background_tasks.add(task)
+            # Remove task from set when done
+            task.add_done_callback(self._background_tasks.discard)
 
         return memory
 
@@ -617,210 +631,526 @@ class MemoryManager:
         self, external_id: str, active_memory_id: int
     ) -> Optional[ShorttermMemory]:
         """
-        Consolidate active memory to shortterm memory with entity/relationship extraction.
+        Consolidate active memory to shortterm using new 13-step algorithm.
 
-        Workflow:
+        Algorithm:
         1. Get active memory
-        2. Find or create matching shortterm memory
-        3. Extract content from all sections
-        4. Chunk the content and store with embeddings
-        5. Extract entities and relationships using ER Extractor Agent
-        6. Compare and merge/add entities using auto-resolution
-        7. Create relationships in Neo4j
+        2. Find or create shortterm memory
+        3. Extract sections with update_count > 0
+        4. For each extracted section, find existing chunks
+        5. For sections without chunks, create new chunks
+        6. For sections with chunks, add to conflict list
+        7. Extract entities/relationships from active memory
+        8. Get all shortterm entities/relationships
+        9. Merge active entities with shortterm (detect conflicts)
+        10. Merge active relationships with shortterm (detect conflicts)
+        11. Send conflicts to memorizer agent for resolution
+        12. Reset active memory section update counts
+        13. Increment shortterm memory update_count
+        14. Check promotion threshold and promote if needed
 
         Args:
             external_id: Agent identifier
-            active_memory_id: Active memory ID to consolidate
+            active_memory_id: Active memory to consolidate
 
         Returns:
-            Created/updated ShorttermMemory or None if failed
+            Updated ShorttermMemory or None if consolidation failed
         """
-        self._ensure_initialized()
-
         logger.info(
-            f"Consolidating active memory {active_memory_id} to shortterm for {external_id}"
+            f"Starting consolidation for external_id={external_id}, "
+            f"active_memory_id={active_memory_id}"
         )
 
         try:
-            # 1. Get active memory
+            # STEP 1: Get active memory
             active_memory = await self.active_repo.get_by_id(active_memory_id)
             if not active_memory:
                 logger.error(f"Active memory {active_memory_id} not found")
                 return None
 
-            # 2. Find or create shortterm memory
+            logger.info(f"Retrieved active memory: {active_memory.title}")
+
+            # STEP 2: Find or create shortterm memory
             shortterm_memory = await self._find_or_create_shortterm_memory(
                 external_id=external_id,
                 title=active_memory.title,
                 metadata=active_memory.metadata,
             )
 
-            # 3. Extract content from all sections
-            all_content = self._extract_content_from_sections(active_memory)
-            if not all_content:
-                logger.warning(f"No content to consolidate from active memory {active_memory_id}")
+            logger.info(f"Using shortterm memory ID: {shortterm_memory.id}")
+
+            # STEP 3: Extract sections with update_count > 0
+            updated_sections = {
+                section_id: section_data
+                for section_id, section_data in active_memory.sections.items()
+                if section_data.get("update_count", 0) > 0
+            }
+
+            if not updated_sections:
+                logger.info("No updated sections found, skipping consolidation")
                 return shortterm_memory
 
-            # 4. Chunk the content
-            chunks = chunk_text(
-                text=all_content,
-                chunk_size=self.config.chunk_size,
-                overlap=self.config.chunk_overlap,
+            logger.info(
+                f"Found {len(updated_sections)} updated sections: "
+                f"{list(updated_sections.keys())}"
             )
-            logger.info(f"Created {len(chunks)} chunks from active memory")
 
-            # Store chunks with embeddings
-            for i, chunk_content in enumerate(chunks):
-                try:
-                    embedding = await self.embedding_service.get_embedding(chunk_content)
-                    await self.shortterm_repo.create_chunk(
-                        shortterm_memory_id=shortterm_memory.id,
-                        external_id=external_id,
-                        content=chunk_content,
-                        chunk_order=i,
-                        embedding=embedding,
-                        metadata={
-                            "source": "active_memory",
-                            "active_memory_id": active_memory_id,
-                            "consolidated_at": datetime.now(timezone.utc).isoformat(),
-                        },
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to create chunk {i}: {e}", exc_info=True)
-                    continue
+            # Initialize conflict tracker
+            conflicts = ConsolidationConflicts(
+                external_id=external_id,
+                active_memory_id=active_memory_id,
+                shortterm_memory_id=shortterm_memory.id,
+                created_at=datetime.now(timezone.utc),
+            )
 
-            # 5. Extract entities and relationships using ER Extractor Agent
-            logger.info("Extracting entities and relationships using ER Extractor Agent...")
-            try:
-                extraction_result = await extract_entities_and_relationships(all_content)
+            # STEP 4: Find chunks for each extracted section
+            section_chunks_map: Dict[str, List[ShorttermMemoryChunk]] = {}
+
+            for section_id in updated_sections.keys():
+                existing_chunks = await self.shortterm_repo.get_chunks_by_section_id(
+                    shortterm_memory_id=shortterm_memory.id,
+                    section_id=section_id,
+                )
+                section_chunks_map[section_id] = existing_chunks
                 logger.info(
-                    f"Extracted {len(extraction_result.entities)} entities and "
-                    f"{len(extraction_result.relationships)} relationships"
+                    f"Section '{section_id}': found {len(existing_chunks)} " f"existing chunks"
+                )
+
+            # STEP 5: Create chunks for sections without existing chunks
+            new_chunks_created = 0
+
+            for section_id, section_data in updated_sections.items():
+                existing_chunks = section_chunks_map[section_id]
+
+                if len(existing_chunks) == 0:
+                    # No existing chunks - create new ones
+                    content = section_data.get("content", "")
+                    if not content:
+                        logger.warning(f"Section '{section_id}' has no content, skipping")
+                        continue
+
+                    # Chunk the content
+                    content_chunks = chunk_text(
+                        text=content,
+                        chunk_size=self.config.chunk_size,
+                        overlap=self.config.chunk_overlap,
+                    )
+
+                    logger.info(
+                        f"Creating {len(content_chunks)} new chunks for " f"section '{section_id}'"
+                    )
+
+                    # Create chunks with embeddings
+                    for i, chunk_content in enumerate(content_chunks):
+                        try:
+                            # Generate embedding
+                            embedding = await self.embedding_service.get_embedding(chunk_content)
+
+                            # Create chunk
+                            chunk = await self.shortterm_repo.create_chunk(
+                                shortterm_memory_id=shortterm_memory.id,
+                                external_id=external_id,
+                                content=chunk_content,
+                                chunk_order=new_chunks_created + i,
+                                embedding=embedding,
+                                section_id=section_id,
+                                metadata={
+                                    "source": "consolidation",
+                                    "section_id": section_id,
+                                },
+                            )
+                            new_chunks_created += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to create chunk {i} for section " f"'{section_id}': {e}",
+                                exc_info=True,
+                            )
+
+            logger.info(f"Created {new_chunks_created} new chunks")
+
+            # STEP 6: Add conflicts for sections with existing chunks
+            for section_id, section_data in updated_sections.items():
+                existing_chunks = section_chunks_map[section_id]
+
+                if len(existing_chunks) > 0:
+                    # Existing chunks found - this is a conflict
+                    conflicts.sections.append(
+                        ConflictSection(
+                            section_id=section_id,
+                            section_content=section_data.get("content", ""),
+                            update_count=section_data.get("update_count", 0),
+                            existing_chunks=existing_chunks,
+                            metadata={"has_conflicts": len(existing_chunks) > 0},
+                        )
+                    )
+                    logger.info(
+                        f"Conflict detected for section '{section_id}': "
+                        f"{len(existing_chunks)} existing chunks"
+                    )
+
+            # STEP 7: Extract entities and relationships from active memory
+            combined_content = self._extract_content_from_sections(active_memory)
+
+            logger.info("Extracting entities and relationships from active memory...")
+            active_extraction = await extract_entities_and_relationships(combined_content)
+
+            active_entities = active_extraction.entities if active_extraction else []
+            active_relationships = active_extraction.relationships if active_extraction else []
+
+            logger.info(
+                f"Extracted {len(active_entities)} entities and "
+                f"{len(active_relationships)} relationships from active memory"
+            )
+
+            # STEP 8: Get all shortterm entities and relationships
+            try:
+                shortterm_entities = await self.shortterm_repo.get_entities_by_memory(
+                    shortterm_memory_id=shortterm_memory.id
+                )
+
+                shortterm_relationships = await self.shortterm_repo.get_relationships_by_memory(
+                    shortterm_memory_id=shortterm_memory.id
+                )
+
+                logger.info(
+                    f"Retrieved {len(shortterm_entities)} entities and "
+                    f"{len(shortterm_relationships)} relationships from shortterm"
                 )
             except Exception as e:
-                logger.error(f"ER extraction failed: {e}", exc_info=True)
-                # Continue without entities/relationships
-                return shortterm_memory
+                logger.warning(f"Failed to retrieve entities/relationships from Neo4j: {e}")
+                logger.warning("Continuing consolidation without entity/relationship merging")
+                shortterm_entities = []
+                shortterm_relationships = []
 
-            # 6. Get existing shortterm entities for comparison
-            existing_entities = await self.shortterm_repo.get_entities_by_memory_id(
-                shortterm_memory.id
-            )
+            # STEP 9-12: Process entities and relationships (optional - skip if Neo4j unavailable)
+            # Create lookup maps
+            shortterm_entities_map = {entity.name: entity for entity in shortterm_entities}
+            shortterm_rel_map = {
+                (rel.from_entity_name, rel.to_entity_name): rel
+                for rel in shortterm_relationships
+                if rel.from_entity_name and rel.to_entity_name
+            }
 
-            # 7. Process and store entities with auto-resolution
-            entity_map = {}  # Map entity names to IDs for relationship creation
-            for extracted_entity in extraction_result.entities:
-                # Check if entity already exists
-                existing_match = None
-                for existing in existing_entities:
-                    if existing.name.lower() == extracted_entity.name.lower():
-                        existing_match = existing
-                        break
+            # STEP 9: Merge active entities with shortterm
+            logger.info("Merging entities...")
 
-                if existing_match:
-                    # Calculate similarity and overlap for auto-resolution
-                    similarity = await self._calculate_semantic_similarity(
-                        extracted_entity.name, existing_match.name
+            for active_entity in active_entities:
+                entity_name = active_entity.name
+                if not entity_name:
+                    continue
+
+                # Get types as list
+                active_types = (
+                    active_entity.types
+                    if hasattr(active_entity, "types") and active_entity.types
+                    else [active_entity.type.value] if hasattr(active_entity, "type") else []
+                )
+
+                active_confidence = (
+                    active_entity.confidence if hasattr(active_entity, "confidence") else 0.5
+                )
+                active_description = (
+                    active_entity.description if hasattr(active_entity, "description") else ""
+                )
+
+                if entity_name in shortterm_entities_map:
+                    # Entity exists in shortterm - MERGE
+                    shortterm_entity = shortterm_entities_map[entity_name]
+
+                    # Merge types (union of both sets)
+                    merged_types = list(set(shortterm_entity.types + active_types))
+
+                    # Recalculate confidence (weighted average, favor higher)
+                    merged_confidence = max(
+                        (shortterm_entity.confidence + active_confidence) / 2,
+                        shortterm_entity.confidence,
+                        active_confidence,
                     )
-                    overlap = self._calculate_entity_overlap(extracted_entity, existing_match)
 
-                    # Auto-resolution: Merge if similarity >= 0.85 AND overlap >= 0.7
-                    if similarity >= 0.85 and overlap >= 0.7:
-                        logger.debug(
-                            f"Auto-merging entity: {extracted_entity.name} "
-                            f"(similarity={similarity:.2f}, overlap={overlap:.2f})"
+                    # Use more detailed description
+                    merged_description = (
+                        active_description
+                        if len(active_description) > len(shortterm_entity.description or "")
+                        else shortterm_entity.description
+                    )
+
+                    # Update entity in database
+                    try:
+                        await self.shortterm_repo.update_entity(
+                            entity_id=shortterm_entity.id,
+                            types=merged_types,
+                            description=merged_description,
+                            confidence=merged_confidence,
                         )
-                        # Update existing entity
-                        updated_entity = await self.shortterm_repo.update_entity(
-                            entity_id=existing_match.id,
-                            confidence=max(existing_match.confidence, extracted_entity.confidence),
-                            metadata={
-                                **existing_match.metadata,
-                                "last_updated": datetime.now(timezone.utc).isoformat(),
-                                "merged_count": existing_match.metadata.get("merged_count", 0) + 1,
-                            },
+                    except Exception as e:
+                        logger.warning(f"Failed to update entity {entity_name}: {e}")
+                        # Continue without updating
+
+                    # Track conflict
+                    conflicts.entity_conflicts.append(
+                        ConflictEntityDetail(
+                            name=entity_name,
+                            shortterm_types=shortterm_entity.types,
+                            active_types=active_types,
+                            merged_types=merged_types,
+                            shortterm_confidence=shortterm_entity.confidence,
+                            active_confidence=active_confidence,
+                            merged_confidence=merged_confidence,
+                            shortterm_description=shortterm_entity.description,
+                            active_description=active_description,
+                            merged_description=merged_description,
                         )
-                        entity_map[extracted_entity.name] = updated_entity.id
-                    else:
-                        # Conflict detected: Create new entity (manual merge required)
-                        logger.debug(
-                            f"Conflict detected for entity: {extracted_entity.name} "
-                            f"(similarity={similarity:.2f}, overlap={overlap:.2f}). Creating new."
-                        )
-                        created_entity = await self.shortterm_repo.create_entity(
+                    )
+
+                    logger.debug(
+                        f"Merged entity '{entity_name}': "
+                        f"types {shortterm_entity.types} + {active_types} = "
+                        f"{merged_types}"
+                    )
+                else:
+                    # New entity - CREATE
+                    try:
+                        await self.shortterm_repo.create_entity(
                             external_id=external_id,
                             shortterm_memory_id=shortterm_memory.id,
-                            name=extracted_entity.name,
-                            entity_type=extracted_entity.type.value,
-                            description=f"Extracted from active memory {active_memory_id}",
-                            confidence=extracted_entity.confidence,
-                            metadata={
-                                "extracted_at": datetime.now(timezone.utc).isoformat(),
-                                "source": "er_extractor_agent",
-                                "conflict_with": existing_match.id,
-                            },
+                            name=entity_name,
+                            types=active_types,
+                            description=active_description,
+                            confidence=active_confidence,
+                            metadata={},
                         )
-                        entity_map[extracted_entity.name] = created_entity.id
-                else:
-                    # No existing entity: Create new
-                    logger.debug(f"Creating new entity: {extracted_entity.name}")
-                    created_entity = await self.shortterm_repo.create_entity(
-                        external_id=external_id,
-                        shortterm_memory_id=shortterm_memory.id,
-                        name=extracted_entity.name,
-                        entity_type=extracted_entity.type.value,
-                        description=f"Extracted from active memory {active_memory_id}",
-                        confidence=extracted_entity.confidence,
-                        metadata={
-                            "extracted_at": datetime.now(timezone.utc).isoformat(),
-                            "source": "er_extractor_agent",
-                        },
+
+                        logger.debug(
+                            f"Created new entity '{entity_name}' with types {active_types}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to create entity {entity_name}: {e}")
+                        # Continue without creating
+
+            # STEP 10: Merge active relationships with shortterm
+            logger.info("Merging relationships...")
+
+            # Refresh entity map after new entity creation
+            try:
+                shortterm_entities = await self.shortterm_repo.get_entities_by_memory(
+                    shortterm_memory_id=shortterm_memory.id
+                )
+                shortterm_entities_map = {entity.name: entity for entity in shortterm_entities}
+            except Exception as e:
+                logger.warning(f"Failed to refresh entities after creation: {e}")
+                # Continue with existing entity map
+
+            for active_rel in active_relationships:
+                from_entity = active_rel.source if hasattr(active_rel, "source") else None
+                to_entity = active_rel.target if hasattr(active_rel, "target") else None
+
+                if not from_entity or not to_entity:
+                    continue
+
+                # Get types as list
+                active_types = (
+                    active_rel.types
+                    if hasattr(active_rel, "types") and active_rel.types
+                    else [active_rel.type.value] if hasattr(active_rel, "type") else []
+                )
+
+                active_confidence = (
+                    active_rel.confidence if hasattr(active_rel, "confidence") else 0.5
+                )
+                active_strength = active_rel.strength if hasattr(active_rel, "strength") else 0.5
+                active_description = (
+                    active_rel.description if hasattr(active_rel, "description") else ""
+                )
+
+                rel_key = (from_entity, to_entity)
+
+                if rel_key in shortterm_rel_map:
+                    # Relationship exists - MERGE
+                    shortterm_rel = shortterm_rel_map[rel_key]
+
+                    # Merge types
+                    merged_types = list(set(shortterm_rel.types + active_types))
+
+                    # Recalculate confidence and strength
+                    merged_confidence = max(
+                        (shortterm_rel.confidence + active_confidence) / 2,
+                        shortterm_rel.confidence,
+                        active_confidence,
                     )
-                    entity_map[extracted_entity.name] = created_entity.id
 
-            # 8. Create relationships
-            relationships_created = 0
-            for extracted_rel in extraction_result.relationships:
-                try:
-                    from_id = entity_map.get(extracted_rel.source)
-                    to_id = entity_map.get(extracted_rel.target)
+                    merged_strength = max(
+                        (shortterm_rel.strength + active_strength) / 2,
+                        shortterm_rel.strength,
+                        active_strength,
+                    )
 
-                    if not from_id or not to_id:
+                    # Use more detailed description
+                    merged_description = (
+                        active_description
+                        if len(active_description) > len(shortterm_rel.description or "")
+                        else shortterm_rel.description
+                    )
+
+                    # Update relationship in database
+                    try:
+                        await self.shortterm_repo.update_relationship(
+                            relationship_id=shortterm_rel.id,
+                            types=merged_types,
+                            description=merged_description,
+                            confidence=merged_confidence,
+                            strength=merged_strength,
+                        )
+                    except Exception as e:
                         logger.warning(
-                            f"Skipping relationship {extracted_rel.source} -> {extracted_rel.target}: "
-                            f"entities not found in entity_map"
+                            f"Failed to update relationship {from_entity}-{to_entity}: {e}"
+                        )
+                        # Continue without updating
+
+                    # Track conflict
+                    conflicts.relationship_conflicts.append(
+                        ConflictRelationshipDetail(
+                            from_entity=from_entity,
+                            to_entity=to_entity,
+                            shortterm_types=shortterm_rel.types,
+                            active_types=active_types,
+                            merged_types=merged_types,
+                            shortterm_confidence=shortterm_rel.confidence,
+                            active_confidence=active_confidence,
+                            merged_confidence=merged_confidence,
+                            shortterm_strength=shortterm_rel.strength,
+                            active_strength=active_strength,
+                            merged_strength=merged_strength,
+                        )
+                    )
+
+                    logger.debug(
+                        f"Merged relationship '{from_entity}'-'{to_entity}': "
+                        f"types {shortterm_rel.types} + {active_types} = "
+                        f"{merged_types}"
+                    )
+                else:
+                    # New relationship - CREATE
+                    # First, get entity IDs
+                    from_entity_obj = shortterm_entities_map.get(from_entity)
+                    to_entity_obj = shortterm_entities_map.get(to_entity)
+
+                    if not from_entity_obj or not to_entity_obj:
+                        logger.warning(
+                            f"Cannot create relationship '{from_entity}'-'{to_entity}': "
+                            f"entities not found"
                         )
                         continue
 
-                    await self.shortterm_repo.create_relationship(
-                        external_id=external_id,
-                        shortterm_memory_id=shortterm_memory.id,
-                        from_entity_id=from_id,
-                        to_entity_id=to_id,
-                        relationship_type=extracted_rel.type.value,
-                        description=f"Extracted from active memory {active_memory_id}",
-                        confidence=extracted_rel.confidence,
-                        strength=0.5,  # Default strength, can be enhanced later
-                        metadata={
-                            "extracted_at": datetime.now(timezone.utc).isoformat(),
-                            "source": "er_extractor_agent",
-                        },
-                    )
-                    relationships_created += 1
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create relationship "
-                        f"{extracted_rel.source} -> {extracted_rel.target}: {e}"
-                    )
+                    try:
+                        await self.shortterm_repo.create_relationship(
+                            external_id=external_id,
+                            shortterm_memory_id=shortterm_memory.id,
+                            from_entity_id=from_entity_obj.id,
+                            to_entity_id=to_entity_obj.id,
+                            types=active_types,
+                            description=active_description,
+                            confidence=active_confidence,
+                            strength=active_strength,
+                            metadata={},
+                        )
 
-            logger.info(
-                f"Successfully consolidated active memory {active_memory_id} "
-                f"to shortterm memory {shortterm_memory.id}: "
-                f"{len(chunks)} chunks, {len(entity_map)} entities, "
-                f"{relationships_created} relationships"
+                        logger.debug(
+                            f"Created new relationship '{from_entity}'-'{to_entity}' "
+                            f"with types {active_types}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to create relationship {from_entity}-{to_entity}: {e}"
+                        )
+                        # Continue without creating
+
+            # STEP 11: Reset active memory section update counts
+            await self.active_repo.reset_all_update_counts(active_memory.id)
+            logger.info(f"Reset section update counts for active memory {active_memory.id}")
+
+            # STEP 12: Send conflicts to memorizer agent for resolution
+            # Count total existing chunks across all sections
+            total_existing_chunks = sum(
+                len(section.existing_chunks) for section in conflicts.sections
             )
 
-            return shortterm_memory
+            conflicts.total_conflicts = (
+                total_existing_chunks
+                + len(conflicts.entity_conflicts)
+                + len(conflicts.relationship_conflicts)
+            )
+
+            if conflicts.total_conflicts > 0:
+                logger.info(f"Detected {conflicts.total_conflicts} total conflicts")
+
+                # Call the memorizer agent for intelligent conflict resolution
+                try:
+                    from agent_mem.agents.memorizer import resolve_conflicts
+
+                    resolution = await resolve_conflicts(conflicts, self.shortterm_repo)
+
+                    logger.info(f"Memorizer agent resolution: {resolution.summary}")
+                    logger.info(
+                        f"Resolution actions: "
+                        f"{len(resolution.chunk_updates)} chunk updates, "
+                        f"{len(resolution.chunk_creates)} chunk creates, "
+                        f"{len(resolution.entity_updates)} entity updates, "
+                        f"{len(resolution.relationship_updates)} relationship updates"
+                    )
+
+                    # Note: The resolution actions were already applied by the agent tools
+                    # The auto-merge in steps 9-10 already handled basic merging
+                    # The agent provides additional intelligent refinements
+
+                except Exception as e:
+                    logger.error(f"Error in memorizer agent resolution: {e}", exc_info=True)
+                    logger.info(
+                        "Continuing with automatic conflict resolution from merge steps 9-10"
+                    )
+            else:
+                logger.info("No conflicts detected, skipping memorizer agent")
+
+            # STEP 13: Increment shortterm memory update_count
+            updated_shortterm = await self.shortterm_repo.increment_update_count(
+                memory_id=shortterm_memory.id
+            )
+
+            if not updated_shortterm:
+                logger.error(
+                    f"Failed to increment update_count for shortterm " f"{shortterm_memory.id}"
+                )
+                return shortterm_memory
+
+            logger.info(
+                f"Incremented shortterm update_count to " f"{updated_shortterm.update_count}"
+            )
+
+            # STEP 14: Check promotion threshold
+            if updated_shortterm.update_count >= self.config.shortterm_update_count_threshold:
+                logger.info(
+                    f"Shortterm update_count ({updated_shortterm.update_count}) >= "
+                    f"threshold ({self.config.shortterm_update_count_threshold}). "
+                    f"Triggering promotion..."
+                )
+
+                # Promote to longterm
+                await self._promote_to_longterm(external_id, updated_shortterm.id)
+
+                # Delete all chunks
+                deleted_count = await self.shortterm_repo.delete_all_chunks(updated_shortterm.id)
+                logger.info(f"Deleted {deleted_count} chunks after promotion")
+
+                # Reset update count
+                await self.shortterm_repo.reset_update_count(updated_shortterm.id)
+                logger.info("Reset shortterm update_count to 0")
+
+            logger.info(
+                f"Consolidation complete: created {new_chunks_created} chunks, "
+                f"merged {len(conflicts.entity_conflicts)} entities, "
+                f"merged {len(conflicts.relationship_conflicts)} relationships"
+            )
+
+            return updated_shortterm
 
         except Exception as e:
             logger.error(f"Consolidation failed: {e}", exc_info=True)
@@ -883,81 +1213,466 @@ class MemoryManager:
         return "\n".join(parts)
 
     # =========================================================================
-    # HELPER FUNCTIONS FOR ENTITY/RELATIONSHIP PROCESSING
+    # PROMOTION WORKFLOWS
     # =========================================================================
 
-    async def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
+    async def _promote_to_longterm(
+        self, external_id: str, shortterm_memory_id: int
+    ) -> List[LongtermMemoryChunk]:
         """
-        Calculate semantic similarity between two texts using embeddings.
+        Enhanced promotion with type merging, confidence recalculation, and state history tracking.
+
+        Workflow:
+        1. Update last_updated timestamps for longterm chunks from this shortterm memory
+        2. Get shortterm chunks
+        3. Copy ALL chunks to longterm (no filtering by importance)
+        4. Get all shortterm and longterm entities
+        5. Process each shortterm entity:
+           - If no entity with same name exists in longterm: create new entity
+           - If exists: merge types, recalculate confidence, add state history to metadata
+        6. Get all shortterm and longterm relationships
+        7. Process each shortterm relationship:
+           - If no relationship with same source+target exists: create new relationship
+           - If exists: merge types, recalculate confidence/strength, add state history to metadata
+        8. Update shortterm memory metadata with promotion history
 
         Args:
-            text1: First text
-            text2: Second text
+            external_id: Agent identifier
+            shortterm_memory_id: Shortterm memory ID to promote
 
         Returns:
-            Cosine similarity score (0-1)
+            List of created LongtermMemoryChunk objects
         """
+        self._ensure_initialized()
+
+        logger.info(
+            f"Promoting shortterm memory {shortterm_memory_id} to longterm for {external_id}"
+        )
+
+        # Track counts for promotion history
+        chunks_added = 0
+        entities_added = 0
+        entities_modified = 0
+        relationships_added = 0
+        relationships_modified = 0
+
         try:
-            # Get embeddings
-            emb1 = await self.embedding_service.get_embedding(text1)
-            emb2 = await self.embedding_service.get_embedding(text2)
+            # STEP 1: Update timestamps for existing chunks from this shortterm memory
+            updated_count = await self.longterm_repo.update_chunk_timestamps(shortterm_memory_id)
+            logger.info(f"Updated timestamps for {updated_count} existing chunks")
 
-            # Calculate cosine similarity
-            import numpy as np
+            # STEP 2: Get shortterm chunks
+            shortterm_chunks = await self.shortterm_repo.get_chunks_by_memory_id(
+                shortterm_memory_id
+            )
 
-            dot_product = np.dot(emb1, emb2)
-            norm1 = np.linalg.norm(emb1)
-            norm2 = np.linalg.norm(emb2)
+            if not shortterm_chunks:
+                logger.warning(f"No chunks found in shortterm memory {shortterm_memory_id}")
+            else:
 
-            if norm1 == 0 or norm2 == 0:
-                return 0.0
+                # STEP 3: Copy ALL chunks to longterm (no filtering)
+                longterm_chunks = []
+                for chunk in shortterm_chunks:
+                    try:
+                        # Get embedding from chunk
+                        embedding = await self.embedding_service.get_embedding(chunk.content)
 
-            similarity = dot_product / (norm1 * norm2)
-            return float(similarity)
+                        # Calculate scores
+                        importance_score = chunk.metadata.get("importance_score", 0.75)
+                        confidence_score = 0.85
+
+                        # Create longterm chunk with temporal tracking
+                        longterm_chunk = await self.longterm_repo.create_chunk(
+                            external_id=external_id,
+                            shortterm_memory_id=shortterm_memory_id,
+                            content=chunk.content,
+                            chunk_order=chunk.chunk_order,
+                            embedding=embedding,
+                            confidence_score=confidence_score,
+                            importance_score=importance_score,
+                            start_date=datetime.now(timezone.utc),
+                            end_date=None,  # Currently valid
+                            metadata={
+                                **chunk.metadata,
+                                "promoted_from_shortterm": shortterm_memory_id,
+                                "promoted_at": datetime.now(timezone.utc).isoformat(),
+                            },
+                        )
+
+                        longterm_chunks.append(longterm_chunk)
+                        chunks_added += 1
+
+                    except Exception as e:
+                        logger.error(f"Failed to promote chunk {chunk.id}: {e}", exc_info=True)
+                        continue
+
+                logger.info(
+                    f"Successfully promoted {len(longterm_chunks)} chunks "
+                    f"from shortterm memory {shortterm_memory_id} to longterm"
+                )
+
+            # STEP 4: Get all shortterm and longterm entities
+            shortterm_entities = await self.shortterm_repo.get_entities_by_memory(
+                shortterm_memory_id
+            )
+
+            if not shortterm_entities:
+                logger.info("No entities to promote")
+            else:
+                logger.info(f"Processing {len(shortterm_entities)} entities for promotion...")
+
+                # Get existing longterm entities for comparison
+                longterm_entities = await self.longterm_repo.get_entities_by_external_id(
+                    external_id
+                )
+
+                # Create lookup dictionary by name (case-insensitive)
+                longterm_entity_map = {entity.name.lower(): entity for entity in longterm_entities}
+
+                # STEP 5: Process each shortterm entity
+                entity_id_map = {}  # Map shortterm entity ID to longterm entity ID
+
+                for st_entity in shortterm_entities:
+                    lt_match = longterm_entity_map.get(st_entity.name.lower())
+
+                    if lt_match:
+                        # Entity exists - merge types and update
+                        # Merge types (union of both lists, preserving order)
+                        merged_types = list(lt_match.types)  # Start with longterm types
+                        for st_type in st_entity.types:
+                            if st_type not in merged_types:
+                                merged_types.append(st_type)
+
+                        # Recalculate confidence (weighted average, favoring more confident value)
+                        # Give 60% weight to higher confidence, 40% to lower
+                        max_conf = max(lt_match.confidence, st_entity.confidence)
+                        min_conf = min(lt_match.confidence, st_entity.confidence)
+                        new_confidence = 0.6 * max_conf + 0.4 * min_conf
+
+                        # Calculate importance
+                        importance = self._calculate_importance(st_entity)
+
+                        # Add state history entry to metadata
+                        now = datetime.now(timezone.utc)
+                        state_history_entry = {
+                            "timestamp": now.isoformat(),
+                            "source": "shortterm_promotion",
+                            "shortterm_memory_id": shortterm_memory_id,
+                            "old_types": lt_match.types,
+                            "new_types": merged_types,
+                            "old_confidence": lt_match.confidence,
+                            "new_confidence": new_confidence,
+                        }
+
+                        # Get existing state_history array or create new
+                        existing_metadata = lt_match.metadata or {}
+                        state_history = existing_metadata.get("state_history", [])
+                        state_history.append(state_history_entry)
+
+                        # Update entity with merged values
+                        logger.debug(
+                            f"Updating longterm entity: {st_entity.name} "
+                            f"(types {lt_match.types} -> {merged_types}, "
+                            f"confidence {lt_match.confidence:.2f} -> {new_confidence:.2f})"
+                        )
+
+                        # Prepare metadata update
+                        updated_metadata = {
+                            **existing_metadata,
+                            "state_history": state_history,
+                            "last_promoted_from_shortterm": shortterm_memory_id,
+                            "last_promotion_date": now.isoformat(),
+                        }
+
+                        # Update entity using existing update method
+                        updated_entity = await self.longterm_repo.update_entity(
+                            entity_id=lt_match.id,
+                            types=merged_types,
+                            confidence=new_confidence,
+                            importance=importance,
+                            last_seen=now,
+                            metadata=updated_metadata,
+                        )
+
+                        if updated_entity:
+                            entity_id_map[st_entity.id] = updated_entity.id
+                            entities_modified += 1
+                            # Update lookup map
+                            longterm_entity_map[st_entity.name.lower()] = updated_entity
+                        else:
+                            logger.error(f"Failed to update entity {lt_match.id}")
+
+                    else:
+                        # Entity doesn't exist - create new
+                        importance = self._calculate_importance(st_entity)
+                        now = datetime.now(timezone.utc)
+
+                        logger.debug(f"Creating new longterm entity: {st_entity.name}")
+
+                        # Initialize state_history with creation entry
+                        initial_state_history = [
+                            {
+                                "timestamp": now.isoformat(),
+                                "source": "shortterm_promotion",
+                                "shortterm_memory_id": shortterm_memory_id,
+                                "types": st_entity.types,
+                                "confidence": st_entity.confidence,
+                                "action": "created",
+                            }
+                        ]
+
+                        created_entity = await self.longterm_repo.create_entity(
+                            external_id=external_id,
+                            name=st_entity.name,
+                            types=st_entity.types,
+                            description=st_entity.description or "",
+                            confidence=st_entity.confidence,
+                            importance=importance,
+                            metadata={
+                                **st_entity.metadata,
+                                "promoted_from_shortterm": shortterm_memory_id,
+                                "promoted_at": now.isoformat(),
+                                "state_history": initial_state_history,
+                            },
+                        )
+
+                        entity_id_map[st_entity.id] = created_entity.id
+                        entities_added += 1
+                        # Add to lookup map
+                        longterm_entity_map[st_entity.name.lower()] = created_entity
+
+                logger.info(
+                    f"Entity promotion complete: {entities_added} created, "
+                    f"{entities_modified} updated"
+                )
+
+            # STEP 6: Get all shortterm and longterm relationships
+            shortterm_relationships = await self.shortterm_repo.get_relationships_by_memory(
+                shortterm_memory_id
+            )
+
+            if not shortterm_relationships:
+                logger.info("No relationships to promote")
+            else:
+                logger.info(
+                    f"Processing {len(shortterm_relationships)} relationships for promotion..."
+                )
+
+                # Get existing longterm relationships
+                longterm_relationships = await self.longterm_repo.get_relationships_by_external_id(
+                    external_id
+                )
+
+                # Create lookup dictionary by (from_name, to_name) tuple (case-insensitive)
+                longterm_rel_map = {}
+                for rel in longterm_relationships:
+                    key = (
+                        rel.from_entity_name.lower() if rel.from_entity_name else "",
+                        rel.to_entity_name.lower() if rel.to_entity_name else "",
+                    )
+                    longterm_rel_map[key] = rel
+
+                # STEP 7: Process each shortterm relationship
+                for st_rel in shortterm_relationships:
+                    try:
+                        # Get longterm entity IDs from map
+                        from_lt_id = entity_id_map.get(st_rel.from_entity_id)
+                        to_lt_id = entity_id_map.get(st_rel.to_entity_id)
+
+                        if not from_lt_id or not to_lt_id:
+                            logger.warning(
+                                f"Skipping relationship: entities not found in entity_id_map "
+                                f"(from: {st_rel.from_entity_id}, to: {st_rel.to_entity_id})"
+                            )
+                            continue
+
+                        # Get entity names for lookup
+                        from_name = st_rel.from_entity_name or ""
+                        to_name = st_rel.to_entity_name or ""
+                        rel_key = (from_name.lower(), to_name.lower())
+
+                        lt_match = longterm_rel_map.get(rel_key)
+
+                        if lt_match:
+                            # Relationship exists - merge types and update
+                            # Merge types (union of both lists, preserving order)
+                            merged_types = list(lt_match.types)  # Start with longterm types
+                            for st_type in st_rel.types:
+                                if st_type not in merged_types:
+                                    merged_types.append(st_type)
+
+                            # Recalculate confidence (weighted average, favoring more confident value)
+                            max_conf = max(lt_match.confidence, st_rel.confidence)
+                            min_conf = min(lt_match.confidence, st_rel.confidence)
+                            new_confidence = 0.6 * max_conf + 0.4 * min_conf
+
+                            # Recalculate strength (weighted average, favoring stronger value)
+                            max_strength = max(lt_match.strength, st_rel.strength)
+                            min_strength = min(lt_match.strength, st_rel.strength)
+                            new_strength = 0.6 * max_strength + 0.4 * min_strength
+
+                            # Add state history entry to metadata
+                            now = datetime.now(timezone.utc)
+                            state_history_entry = {
+                                "timestamp": now.isoformat(),
+                                "source": "shortterm_promotion",
+                                "shortterm_memory_id": shortterm_memory_id,
+                                "old_types": lt_match.types,
+                                "new_types": merged_types,
+                                "old_confidence": lt_match.confidence,
+                                "new_confidence": new_confidence,
+                                "old_strength": lt_match.strength,
+                                "new_strength": new_strength,
+                            }
+
+                            # Get existing state_history array or create new
+                            existing_metadata = lt_match.metadata or {}
+                            state_history = existing_metadata.get("state_history", [])
+                            state_history.append(state_history_entry)
+
+                            # Update relationship
+                            logger.debug(
+                                f"Updating longterm relationship: {from_name} -> {to_name} "
+                                f"(types {lt_match.types} -> {merged_types}, "
+                                f"confidence {lt_match.confidence:.2f} -> {new_confidence:.2f}, "
+                                f"strength {lt_match.strength:.2f} -> {new_strength:.2f})"
+                            )
+
+                            # Prepare metadata update
+                            updated_metadata = {
+                                **existing_metadata,
+                                "state_history": state_history,
+                                "last_promoted_from_shortterm": shortterm_memory_id,
+                                "last_promotion_date": now.isoformat(),
+                            }
+
+                            # Update relationship
+                            updated_rel = await self.longterm_repo.update_relationship(
+                                relationship_id=lt_match.id,
+                                types=merged_types,
+                                confidence=new_confidence,
+                                strength=new_strength,
+                                metadata=updated_metadata,
+                            )
+
+                            if updated_rel:
+                                relationships_modified += 1
+                                # Update lookup map
+                                longterm_rel_map[rel_key] = updated_rel
+                            else:
+                                logger.error(f"Failed to update relationship {lt_match.id}")
+
+                        else:
+                            # Relationship doesn't exist - create new
+                            now = datetime.now(timezone.utc)
+
+                            logger.debug(
+                                f"Creating new longterm relationship: {from_name} -> {to_name}"
+                            )
+
+                            # Initialize state_history with creation entry
+                            initial_state_history = [
+                                {
+                                    "timestamp": now.isoformat(),
+                                    "source": "shortterm_promotion",
+                                    "shortterm_memory_id": shortterm_memory_id,
+                                    "types": st_rel.types,
+                                    "confidence": st_rel.confidence,
+                                    "strength": st_rel.strength,
+                                    "action": "created",
+                                }
+                            ]
+
+                            # Calculate importance based on entity importance and relationship strength
+                            importance = st_rel.strength * 0.8 + st_rel.confidence * 0.2
+
+                            created_rel = await self.longterm_repo.create_relationship(
+                                external_id=external_id,
+                                from_entity_id=from_lt_id,
+                                to_entity_id=to_lt_id,
+                                types=st_rel.types,
+                                description=st_rel.description or "",
+                                confidence=st_rel.confidence,
+                                strength=st_rel.strength,
+                                importance=importance,
+                                metadata={
+                                    **st_rel.metadata,
+                                    "promoted_from_shortterm": shortterm_memory_id,
+                                    "promoted_at": now.isoformat(),
+                                    "state_history": initial_state_history,
+                                },
+                            )
+
+                            relationships_added += 1
+                            # Add to lookup map
+                            longterm_rel_map[rel_key] = created_rel
+
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to promote relationship from {st_rel.from_entity_name} "
+                            f"to {st_rel.to_entity_name}: {e}",
+                            exc_info=True,
+                        )
+
+                logger.info(
+                    f"Relationship promotion complete: {relationships_added} created, "
+                    f"{relationships_modified} updated"
+                )
+
+            # STEP 8: Update shortterm memory metadata with promotion history
+            try:
+                # Get current shortterm memory
+                st_memory = await self.shortterm_repo.get_memory_by_id(shortterm_memory_id)
+                if st_memory:
+                    # Get existing promotion_history or create new
+                    existing_metadata = st_memory.metadata or {}
+                    promotion_history = existing_metadata.get("promotion_history", [])
+
+                    # Add new promotion entry
+                    promotion_entry = {
+                        "date": datetime.now(timezone.utc).isoformat(),
+                        "chunks_added": chunks_added,
+                        "entities_added": entities_added,
+                        "entities_modified": entities_modified,
+                        "relationships_added": relationships_added,
+                        "relationships_modified": relationships_modified,
+                    }
+                    promotion_history.append(promotion_entry)
+
+                    # Update shortterm memory metadata
+                    updated_metadata = {
+                        **existing_metadata,
+                        "promotion_history": promotion_history,
+                        "last_promotion_date": promotion_entry["date"],
+                    }
+
+                    await self.shortterm_repo.update_memory(
+                        memory_id=shortterm_memory_id,
+                        metadata=updated_metadata,
+                    )
+
+                    logger.info(
+                        f"Updated shortterm memory {shortterm_memory_id} with promotion history"
+                    )
+
+            except Exception as e:
+                logger.error(f"Failed to update shortterm memory metadata: {e}", exc_info=True)
+
+            logger.info(
+                f"Promotion complete - Chunks: {chunks_added} added, "
+                f"Entities: {entities_added} added/{entities_modified} modified, "
+                f"Relationships: {relationships_added} added/{relationships_modified} modified"
+            )
+
+            return longterm_chunks if "longterm_chunks" in locals() else []
 
         except Exception as e:
-            logger.error(f"Failed to calculate semantic similarity: {e}")
-            # Fallback to string comparison
-            return 1.0 if text1.lower() == text2.lower() else 0.0
+            logger.error(f"Promotion failed: {e}", exc_info=True)
+            return []
 
-    def _calculate_entity_overlap(self, entity1, entity2) -> float:
-        """
-        Calculate overlap between two entities based on name and type.
-
-        Args:
-            entity1: First entity (extracted or existing)
-            entity2: Second entity (extracted or existing)
-
-        Returns:
-            Overlap score (0.0-1.0)
-        """
-        # Extract names and types
-        name1 = getattr(entity1, "name", "").lower()
-        name2 = getattr(entity2, "name", "").lower()
-
-        # Handle entity type (might be enum or string)
-        type1 = getattr(entity1, "type", None)
-        type2 = getattr(entity2, "type", None)
-
-        # Convert enum to string if needed
-        if hasattr(type1, "value"):
-            type1 = type1.value
-        if hasattr(type2, "value"):
-            type2 = type2.value
-
-        # Check name similarity
-        name_match = name1 == name2
-
-        # Check type match
-        type_match = type1 == type2
-
-        # Return overlap score
-        if name_match and type_match:
-            return 1.0
-        elif name_match or type_match:
-            return 0.5
-        else:
-            return 0.0
+    # =========================================================================
+    # HELPER FUNCTIONS FOR ENTITY/RELATIONSHIP PROCESSING
+    # =========================================================================
 
     def _calculate_importance(self, entity) -> float:
         """
@@ -999,235 +1714,3 @@ class MemoryManager:
 
         # Cap at 1.0
         return min(importance, 1.0)
-
-    # =========================================================================
-    # PROMOTION WORKFLOWS
-    # =========================================================================
-
-    async def _promote_to_longterm(
-        self, external_id: str, shortterm_memory_id: int
-    ) -> List[LongtermMemoryChunk]:
-        """
-        Promote shortterm memory to longterm memory with entity/relationship handling.
-
-        Workflow:
-        1. Get shortterm memory chunks and filter by importance
-        2. Copy chunks to longterm with temporal tracking
-        3. Get shortterm entities and compare with longterm entities
-        4. Update existing longterm entities or create new ones
-        5. Promote relationships with temporal tracking
-
-        Args:
-            external_id: Agent identifier
-            shortterm_memory_id: Shortterm memory ID to promote
-
-        Returns:
-            List of created LongtermMemoryChunk objects
-        """
-        self._ensure_initialized()
-
-        logger.info(
-            f"Promoting shortterm memory {shortterm_memory_id} to longterm for {external_id}"
-        )
-
-        try:
-            # 1. Get shortterm chunks
-            shortterm_chunks = await self.shortterm_repo.get_chunks_by_memory_id(
-                shortterm_memory_id
-            )
-
-            if not shortterm_chunks:
-                logger.warning(f"No chunks found in shortterm memory {shortterm_memory_id}")
-                return []
-
-            longterm_chunks = []
-
-            # 2. Filter and copy chunks to longterm with temporal tracking
-            for chunk in shortterm_chunks:
-                try:
-                    # Calculate importance score
-                    importance_score = chunk.metadata.get("importance_score", 0.75)
-                    confidence_score = 0.85
-
-                    # Skip if below threshold
-                    if importance_score < self.config.shortterm_promotion_threshold:
-                        logger.debug(
-                            f"Skipping chunk {chunk.id} - "
-                            f"importance {importance_score} below threshold"
-                        )
-                        continue
-
-                    # Get embedding from chunk
-                    embedding = await self.embedding_service.get_embedding(chunk.content)
-
-                    # Create longterm chunk with temporal tracking
-                    longterm_chunk = await self.longterm_repo.create_chunk(
-                        external_id=external_id,
-                        shortterm_memory_id=shortterm_memory_id,
-                        content=chunk.content,
-                        chunk_order=chunk.chunk_order,
-                        embedding=embedding,
-                        confidence_score=confidence_score,
-                        importance_score=importance_score,
-                        start_date=datetime.now(timezone.utc),
-                        end_date=None,  # Currently valid
-                        metadata={
-                            **chunk.metadata,
-                            "promoted_from_shortterm": shortterm_memory_id,
-                            "promoted_at": datetime.now(timezone.utc).isoformat(),
-                        },
-                    )
-
-                    longterm_chunks.append(longterm_chunk)
-
-                except Exception as e:
-                    logger.error(f"Failed to promote chunk {chunk.id}: {e}", exc_info=True)
-                    continue
-
-            logger.info(
-                f"Successfully promoted {len(longterm_chunks)} chunks "
-                f"from shortterm memory {shortterm_memory_id} to longterm"
-            )
-
-            # 3. Get shortterm entities for promotion
-            shortterm_entities = await self.shortterm_repo.get_entities_by_memory_id(
-                shortterm_memory_id
-            )
-
-            if shortterm_entities:
-                logger.info(f"Promoting {len(shortterm_entities)} entities to longterm...")
-
-                # Get existing longterm entities for comparison
-                longterm_entities = await self.longterm_repo.get_entities_by_external_id(
-                    external_id
-                )
-
-                # 4. Process entities with confidence update
-                entities_created = 0
-                entities_updated = 0
-                entity_id_map = {}  # Map shortterm entity ID to longterm entity ID
-
-                for st_entity in shortterm_entities:
-                    # Find matching longterm entity
-                    lt_match = None
-                    for lt_entity in longterm_entities:
-                        if (
-                            lt_entity.name.lower() == st_entity.name.lower()
-                            and lt_entity.type == st_entity.type
-                        ):
-                            lt_match = lt_entity
-                            break
-
-                    if lt_match:
-                        # Update existing entity confidence using weighted formula
-                        weight = 0.7
-                        new_confidence = (
-                            weight * lt_match.confidence + (1 - weight) * st_entity.confidence
-                        )
-
-                        logger.debug(
-                            f"Updating longterm entity: {st_entity.name} "
-                            f"(confidence {lt_match.confidence:.2f} -> {new_confidence:.2f})"
-                        )
-
-                        updated_entity = await self.longterm_repo.update_entity(
-                            entity_id=lt_match.id,
-                            confidence=new_confidence,
-                            last_seen=datetime.now(timezone.utc),
-                            metadata={
-                                **lt_match.metadata,
-                                "last_updated_from_shortterm": shortterm_memory_id,
-                                "last_updated": datetime.now(timezone.utc).isoformat(),
-                            },
-                        )
-                        entity_id_map[st_entity.id] = updated_entity.id
-                        entities_updated += 1
-                    else:
-                        # Create new longterm entity with temporal tracking
-                        importance = self._calculate_importance(st_entity)
-
-                        logger.debug(f"Creating new longterm entity: {st_entity.name}")
-
-                        created_entity = await self.longterm_repo.create_entity(
-                            external_id=external_id,
-                            name=st_entity.name,
-                            entity_type=st_entity.type,
-                            description=st_entity.description or "",
-                            confidence=st_entity.confidence,
-                            importance=importance,
-                            first_seen=datetime.now(timezone.utc),
-                            last_seen=datetime.now(timezone.utc),
-                            metadata={
-                                **st_entity.metadata,
-                                "promoted_from_shortterm": shortterm_memory_id,
-                                "promoted_at": datetime.now(timezone.utc).isoformat(),
-                            },
-                        )
-                        entity_id_map[st_entity.id] = created_entity.id
-                        entities_created += 1
-
-                logger.info(
-                    f"Entity promotion complete: {entities_created} created, "
-                    f"{entities_updated} updated"
-                )
-
-                # 5. Promote relationships with temporal tracking
-                shortterm_relationships = await self.shortterm_repo.get_relationships_by_memory_id(
-                    shortterm_memory_id
-                )
-
-                if shortterm_relationships:
-                    logger.info(
-                        f"Promoting {len(shortterm_relationships)} relationships to longterm..."
-                    )
-
-                    relationships_created = 0
-                    relationships_updated = 0
-
-                    for st_rel in shortterm_relationships:
-                        try:
-                            # Get longterm entity IDs
-                            from_lt_id = entity_id_map.get(st_rel.from_entity_id)
-                            to_lt_id = entity_id_map.get(st_rel.to_entity_id)
-
-                            if not from_lt_id or not to_lt_id:
-                                logger.warning(
-                                    f"Skipping relationship: entities not found in entity_id_map"
-                                )
-                                continue
-
-                            # Check if relationship already exists in longterm
-                            # (This would require a method to check existing relationships)
-                            # For now, we'll create new relationships
-
-                            await self.longterm_repo.create_relationship(
-                                external_id=external_id,
-                                from_entity_id=from_lt_id,
-                                to_entity_id=to_lt_id,
-                                relationship_type=st_rel.type,
-                                description=st_rel.description or "",
-                                confidence=st_rel.confidence,
-                                strength=st_rel.strength,
-                                start_date=datetime.now(timezone.utc),
-                                last_updated=datetime.now(timezone.utc),
-                                metadata={
-                                    **st_rel.metadata,
-                                    "promoted_from_shortterm": shortterm_memory_id,
-                                    "promoted_at": datetime.now(timezone.utc).isoformat(),
-                                },
-                            )
-                            relationships_created += 1
-
-                        except Exception as e:
-                            logger.error(f"Failed to promote relationship: {e}", exc_info=True)
-
-                    logger.info(
-                        f"Relationship promotion complete: {relationships_created} created, "
-                        f"{relationships_updated} updated"
-                    )
-
-            return longterm_chunks
-
-        except Exception as e:
-            logger.error(f"Promotion failed: {e}", exc_info=True)
-            return []

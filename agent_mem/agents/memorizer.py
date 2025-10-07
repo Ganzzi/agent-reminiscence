@@ -9,7 +9,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, Tool
 
 from agent_mem.config.settings import get_config
 from agent_mem.services.llm_model_provider import model_provider
@@ -95,6 +95,177 @@ class ConflictResolution(BaseModel):
 # =========================================================================
 
 
+# Register tools
+async def update_chunk(
+    ctx: RunContext[MemorizerDeps], chunk_id: int, new_content: str, reason: str
+) -> Dict[str, Any]:
+    """
+    Update a shortterm memory chunk with new content.
+
+    Args:
+        chunk_id: ID of the chunk to update
+        new_content: New content for the chunk
+        reason: Explanation for why this update is needed
+
+    Returns:
+        Result of the update operation
+    """
+    try:
+        logger.info(f"Updating chunk {chunk_id}. Reason: {reason}")
+
+        updated_chunk = await ctx.deps.shortterm_repo.update_chunk(
+            chunk_id=chunk_id, content=new_content
+        )
+
+        if not updated_chunk:
+            return {"success": False, "error": f"Chunk {chunk_id} not found"}
+
+        return {
+            "success": True,
+            "chunk_id": updated_chunk.id,
+            "reason": reason,
+        }
+    except Exception as e:
+        logger.error(f"Error updating chunk {chunk_id}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def create_chunk(
+    ctx: RunContext[MemorizerDeps],
+    content: str,
+    chunk_order: int,
+    section_id: Optional[str],
+    reason: str,
+) -> Dict[str, Any]:
+    """
+    Create a new shortterm memory chunk.
+
+    Args:
+        content: Content of the new chunk
+        chunk_order: Order position for the chunk
+        section_id: Optional section ID reference
+        reason: Explanation for why this chunk should be created
+
+    Returns:
+        Result of the create operation
+    """
+    try:
+        logger.info(f"Creating new chunk in section {section_id}. Reason: {reason}")
+
+        # Note: Embedding will be None - embedding service would be needed for full implementation
+        new_chunk = await ctx.deps.shortterm_repo.create_chunk(
+            shortterm_memory_id=ctx.deps.shortterm_memory_id,
+            external_id=ctx.deps.external_id,
+            content=content,
+            chunk_order=chunk_order,
+            section_id=section_id,
+            metadata={"source": "memorizer_agent", "reason": reason},
+        )
+
+        return {
+            "success": True,
+            "chunk_id": new_chunk.id,
+            "reason": reason,
+        }
+    except Exception as e:
+        logger.error(f"Error creating chunk: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def update_entity(
+    ctx: RunContext[MemorizerDeps],
+    entity_id: int,
+    name: Optional[str],
+    types: Optional[List[str]],
+    description: Optional[str],
+    confidence: Optional[float],
+    reason: str,
+) -> Dict[str, Any]:
+    """
+    Update an entity with new information.
+
+    Args:
+        entity_id: ID of the entity to update
+        name: New name (optional)
+        types: New types list (optional)
+        description: New description (optional)
+        confidence: New confidence score (optional)
+        reason: Explanation for why this update is needed
+
+    Returns:
+        Result of the update operation
+    """
+    try:
+        logger.info(f"Updating entity {entity_id}. Reason: {reason}")
+
+        updated_entity = await ctx.deps.shortterm_repo.update_entity(
+            entity_id=entity_id,
+            name=name,
+            types=types,
+            description=description,
+            confidence=confidence,
+        )
+
+        if not updated_entity:
+            return {"success": False, "error": f"Entity {entity_id} not found"}
+
+        return {
+            "success": True,
+            "entity_id": updated_entity.id,
+            "reason": reason,
+        }
+    except Exception as e:
+        logger.error(f"Error updating entity {entity_id}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def update_relationship(
+    ctx: RunContext[MemorizerDeps],
+    relationship_id: int,
+    types: Optional[List[str]],
+    description: Optional[str],
+    confidence: Optional[float],
+    strength: Optional[float],
+    reason: str,
+) -> Dict[str, Any]:
+    """
+    Update a relationship with new information.
+
+    Args:
+        relationship_id: ID of the relationship to update
+        types: New types list (optional)
+        description: New description (optional)
+        confidence: New confidence score (optional)
+        strength: New strength score (optional)
+        reason: Explanation for why this update is needed
+
+    Returns:
+        Result of the update operation
+    """
+    try:
+        logger.info(f"Updating relationship {relationship_id}. Reason: {reason}")
+
+        updated_rel = await ctx.deps.shortterm_repo.update_relationship(
+            relationship_id=relationship_id,
+            types=types,
+            description=description,
+            confidence=confidence,
+            strength=strength,
+        )
+
+        if not updated_rel:
+            return {"success": False, "error": f"Relationship {relationship_id} not found"}
+
+        return {
+            "success": True,
+            "relationship_id": updated_rel.id,
+            "reason": reason,
+        }
+    except Exception as e:
+        logger.error(f"Error updating relationship {relationship_id}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 def _get_memorizer_agent() -> Agent[MemorizerDeps, ConflictResolution]:
     """
     Get or create the memorizer agent (lazy initialization).
@@ -111,6 +282,12 @@ def _get_memorizer_agent() -> Agent[MemorizerDeps, ConflictResolution]:
         model=model,
         deps_type=MemorizerDeps,
         output_type=ConflictResolution,
+        tools=[
+            Tool(update_chunk, takes_ctx=True, docstring_format="google"),
+            Tool(create_chunk, takes_ctx=True, docstring_format="google"),
+            Tool(update_entity, takes_ctx=True, docstring_format="google"),
+            Tool(update_relationship, takes_ctx=True, docstring_format="google"),
+        ],
         system_prompt="""You are an expert memory consolidation agent responsible for resolving conflicts 
 between active memory and shortterm memory.
 
@@ -127,183 +304,19 @@ When resolving conflicts:
 - Use confidence scores to guide decisions
 - Explain your reasoning for each action
 
-Available tools:
-- update_chunk: Update existing shortterm memory chunk
-- create_chunk: Create new shortterm memory chunk
-- update_entity: Update entity information
-- update_relationship: Update relationship information""",
+CRITICAL: You MUST use the provided tools to resolve conflicts. Do NOT just analyze - actively call the tools:
+- update_chunk: Update existing shortterm memory chunk with merged content
+- create_chunk: Create new shortterm memory chunk when needed
+- update_entity: Update entity information with merged data
+- update_relationship: Update relationship information with merged data
+
+For each conflict, you should:
+1. Call the appropriate tool(s) to make the actual changes
+2. The tools will return success/failure status
+3. After making all changes, provide a summary in your final response
+
+Remember: Your job is to EXECUTE the conflict resolution, not just plan it.""",
     )
-
-    # Register tools
-    @agent.tool
-    async def update_chunk(
-        ctx: RunContext[MemorizerDeps], chunk_id: int, new_content: str, reason: str
-    ) -> Dict[str, Any]:
-        """
-        Update a shortterm memory chunk with new content.
-
-        Args:
-            chunk_id: ID of the chunk to update
-            new_content: New content for the chunk
-            reason: Explanation for why this update is needed
-
-        Returns:
-            Result of the update operation
-        """
-        try:
-            logger.info(f"Updating chunk {chunk_id}. Reason: {reason}")
-
-            updated_chunk = await ctx.deps.shortterm_repo.update_chunk(
-                chunk_id=chunk_id, content=new_content
-            )
-
-            if not updated_chunk:
-                return {"success": False, "error": f"Chunk {chunk_id} not found"}
-
-            return {
-                "success": True,
-                "chunk_id": updated_chunk.id,
-                "reason": reason,
-            }
-        except Exception as e:
-            logger.error(f"Error updating chunk {chunk_id}: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
-
-    @agent.tool
-    async def create_chunk(
-        ctx: RunContext[MemorizerDeps],
-        content: str,
-        chunk_order: int,
-        section_id: Optional[str],
-        reason: str,
-    ) -> Dict[str, Any]:
-        """
-        Create a new shortterm memory chunk.
-
-        Args:
-            content: Content of the new chunk
-            chunk_order: Order position for the chunk
-            section_id: Optional section ID reference
-            reason: Explanation for why this chunk should be created
-
-        Returns:
-            Result of the create operation
-        """
-        try:
-            logger.info(f"Creating new chunk in section {section_id}. Reason: {reason}")
-
-            # Note: Embedding will be None - embedding service would be needed for full implementation
-            new_chunk = await ctx.deps.shortterm_repo.create_chunk(
-                shortterm_memory_id=ctx.deps.shortterm_memory_id,
-                external_id=ctx.deps.external_id,
-                content=content,
-                chunk_order=chunk_order,
-                section_id=section_id,
-                metadata={"source": "memorizer_agent", "reason": reason},
-            )
-
-            return {
-                "success": True,
-                "chunk_id": new_chunk.id,
-                "reason": reason,
-            }
-        except Exception as e:
-            logger.error(f"Error creating chunk: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
-
-    @agent.tool
-    async def update_entity(
-        ctx: RunContext[MemorizerDeps],
-        entity_id: int,
-        name: Optional[str],
-        types: Optional[List[str]],
-        description: Optional[str],
-        confidence: Optional[float],
-        reason: str,
-    ) -> Dict[str, Any]:
-        """
-        Update an entity with new information.
-
-        Args:
-            entity_id: ID of the entity to update
-            name: New name (optional)
-            types: New types list (optional)
-            description: New description (optional)
-            confidence: New confidence score (optional)
-            reason: Explanation for why this update is needed
-
-        Returns:
-            Result of the update operation
-        """
-        try:
-            logger.info(f"Updating entity {entity_id}. Reason: {reason}")
-
-            updated_entity = await ctx.deps.shortterm_repo.update_entity(
-                entity_id=entity_id,
-                name=name,
-                types=types,
-                description=description,
-                confidence=confidence,
-            )
-
-            if not updated_entity:
-                return {"success": False, "error": f"Entity {entity_id} not found"}
-
-            return {
-                "success": True,
-                "entity_id": updated_entity.id,
-                "reason": reason,
-            }
-        except Exception as e:
-            logger.error(f"Error updating entity {entity_id}: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
-
-    @agent.tool
-    async def update_relationship(
-        ctx: RunContext[MemorizerDeps],
-        relationship_id: int,
-        types: Optional[List[str]],
-        description: Optional[str],
-        confidence: Optional[float],
-        strength: Optional[float],
-        reason: str,
-    ) -> Dict[str, Any]:
-        """
-        Update a relationship with new information.
-
-        Args:
-            relationship_id: ID of the relationship to update
-            types: New types list (optional)
-            description: New description (optional)
-            confidence: New confidence score (optional)
-            strength: New strength score (optional)
-            reason: Explanation for why this update is needed
-
-        Returns:
-            Result of the update operation
-        """
-        try:
-            logger.info(f"Updating relationship {relationship_id}. Reason: {reason}")
-
-            updated_rel = await ctx.deps.shortterm_repo.update_relationship(
-                relationship_id=relationship_id,
-                types=types,
-                description=description,
-                confidence=confidence,
-                strength=strength,
-            )
-
-            if not updated_rel:
-                return {"success": False, "error": f"Relationship {relationship_id} not found"}
-
-            return {
-                "success": True,
-                "relationship_id": updated_rel.id,
-                "reason": reason,
-            }
-        except Exception as e:
-            logger.error(f"Error updating relationship {relationship_id}: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
 
     return agent
 
@@ -452,3 +465,116 @@ async def resolve_conflicts(
         return ConflictResolution(
             summary=f"Error during conflict resolution: {str(e)}",
         )
+
+
+# =========================================================================
+# TEST MAIN FUNCTION
+# =========================================================================
+if __name__ == "__main__":
+    import asyncio
+    from dataclasses import dataclass
+
+    @dataclass
+    class MockChunk:
+        id: int
+        content: str
+
+    @dataclass
+    class MockEntity:
+        id: int
+
+    @dataclass
+    class MockRelationship:
+        id: int
+
+    async def main():
+        """Main function to test the memorizer agent."""
+        logging.basicConfig(level=logging.INFO)
+        logger.info("Testing Memorizer Agent")
+
+        # Get the agent
+        agent = _get_memorizer_agent()
+
+        # Create mock dependencies
+        class MockShorttermRepo:
+            async def update_chunk(self, chunk_id: int, content: str):
+                logger.info(f"[Mock] Updating chunk {chunk_id}")
+                return MockChunk(id=chunk_id, content=content)
+
+            async def create_chunk(
+                self,
+                shortterm_memory_id: int,
+                external_id: str,
+                content: str,
+                chunk_order: int,
+                section_id: str,
+                metadata: dict,
+            ):
+                logger.info(f"[Mock] Creating chunk")
+                return MockChunk(id=999, content=content)
+
+            async def update_entity(self, entity_id: int, **kwargs):
+                logger.info(f"[Mock] Updating entity {entity_id}")
+                return MockEntity(id=entity_id)
+
+            async def update_relationship(self, relationship_id: int, **kwargs):
+                logger.info(f"[Mock] Updating relationship {relationship_id}")
+                return MockRelationship(id=relationship_id)
+
+        deps = MemorizerDeps(
+            external_id="test-main",
+            active_memory_id=1,
+            shortterm_memory_id=1,
+            shortterm_repo=MockShorttermRepo(),
+        )
+
+        # Test the resolve_conflicts function directly
+        from agent_mem.database.models import (
+            ConflictSection,
+            ShorttermMemoryChunk,
+            ConflictEntityDetail,
+            ConflictRelationshipDetail,
+        )
+        import datetime
+
+        # 1. Create mock data
+        mock_conflicts = ConsolidationConflicts(
+            external_id="test-resolve-conflicts",
+            active_memory_id=1,
+            shortterm_memory_id=1,
+            created_at=datetime.datetime.now(),
+            total_conflicts=1,
+            sections=[
+                ConflictSection(
+                    section_id="summary",
+                    section_content="UPDATED: This is the new summary.",
+                    update_count=1,
+                    existing_chunks=[
+                        ShorttermMemoryChunk(
+                            id=1,
+                            shortterm_memory_id=1,
+                            content="This is the old summary.",
+                            chunk_order=0,
+                        )
+                    ],
+                )
+            ],
+        )
+
+        # 2. Call resolve_conflicts
+        logger.info("Testing resolve_conflicts function directly")
+        try:
+            resolution = await resolve_conflicts(
+                conflicts=mock_conflicts, shortterm_repo=MockShorttermRepo()
+            )
+
+            logger.info(f"Resolution summary: {resolution.summary}")
+            logger.info(
+                f"Actions: {len(resolution.chunk_updates)} chunk updates, "
+                f"{len(resolution.chunk_creates)} chunk creates"
+            )
+
+        except Exception as e:
+            logger.error(f"An error occurred during resolve_conflicts test: {e}", exc_info=True)
+
+    asyncio.run(main())

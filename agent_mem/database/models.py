@@ -92,7 +92,7 @@ class LongtermMemory(BaseModel):
 class ShorttermEntity(BaseModel):
     """Shortterm entity model for graph nodes."""
 
-    id: int
+    id: str  # Neo4j elementId (string)
     external_id: str
     shortterm_memory_id: int
     name: str
@@ -109,11 +109,11 @@ class ShorttermEntity(BaseModel):
 class ShorttermRelationship(BaseModel):
     """Shortterm relationship model for graph edges."""
 
-    id: int
+    id: str  # Neo4j elementId (string)
     external_id: str
     shortterm_memory_id: int
-    from_entity_id: int
-    to_entity_id: int
+    from_entity_id: str  # Neo4j elementId (string)
+    to_entity_id: str  # Neo4j elementId (string)
     from_entity_name: Optional[str] = None
     to_entity_name: Optional[str] = None
     types: List[str] = Field(default_factory=list)  # Multiple types supported
@@ -130,7 +130,7 @@ class ShorttermRelationship(BaseModel):
 class LongtermEntity(BaseModel):
     """Longterm entity model for graph nodes."""
 
-    id: int
+    id: str  # Neo4j elementId (string)
     external_id: str
     name: str
     types: List[str] = Field(default_factory=list)  # Multiple types supported
@@ -147,16 +147,17 @@ class LongtermEntity(BaseModel):
 class LongtermRelationship(BaseModel):
     """Longterm relationship model for graph edges."""
 
-    id: int
+    id: str  # Neo4j elementId (string)
     external_id: str
-    from_entity_id: int
-    to_entity_id: int
+    from_entity_id: str  # Neo4j elementId (string)
+    to_entity_id: str  # Neo4j elementId (string)
     from_entity_name: Optional[str] = None
     to_entity_name: Optional[str] = None
     types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     strength: float = Field(ge=0.0, le=1.0)
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
     start_date: datetime
     last_updated: datetime
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -167,7 +168,7 @@ class LongtermRelationship(BaseModel):
 class Entity(BaseModel):
     """Entity model for graph nodes (generic)."""
 
-    id: int
+    id: str  # Neo4j elementId (string)
     external_id: str
     name: str
     types: List[str] = Field(default_factory=list)  # Multiple types supported
@@ -185,16 +186,17 @@ class Entity(BaseModel):
 class Relationship(BaseModel):
     """Relationship model for graph edges (generic)."""
 
-    id: int
+    id: str  # Neo4j elementId (string)
     external_id: str
-    from_entity_id: int
-    to_entity_id: int
+    from_entity_id: str  # Neo4j elementId (string)
+    to_entity_id: str  # Neo4j elementId (string)
     from_entity_name: Optional[str] = None
     to_entity_name: Optional[str] = None
     types: List[str] = Field(default_factory=list)  # Multiple types supported
     description: Optional[str] = None
     confidence: float = Field(ge=0.0, le=1.0)
     strength: float = Field(ge=0.0, le=1.0)
+    importance: Optional[float] = Field(default=None, ge=0.0, le=1.0)  # Only for longterm
     first_observed: Optional[datetime] = None
     last_observed: Optional[datetime] = None
     start_date: Optional[datetime] = None
