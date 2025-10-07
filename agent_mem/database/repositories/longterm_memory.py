@@ -20,6 +20,7 @@ from agent_mem.database.models import (
     LongtermMemoryChunk,
     LongtermEntity,
     LongtermRelationship,
+    LongtermEntityRelationshipSearchResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,84 +150,6 @@ class LongtermMemoryRepository:
 
             return self._chunk_row_to_model(rows[0])
 
-    async def get_valid_chunks_by_external_id(
-        self,
-        external_id: str,
-        limit: int = 100,
-        min_importance: float = 0.0,
-    ) -> List[LongtermMemoryChunk]:
-        """
-        Get all currently valid chunks for an external_id.
-
-        Args:
-            external_id: Agent identifier
-            limit: Maximum number of chunks
-            min_importance: Minimum importance score
-
-        Returns:
-            List of LongtermMemoryChunk objects
-        """
-        query = """
-            SELECT id, external_id, shortterm_memory_id, content, 
-                   importance, start_date, last_updated, access_count, last_access, metadata
-            FROM longterm_memory_chunk
-            WHERE external_id = $1 
-              AND importance >= $2
-            ORDER BY importance DESC, start_date DESC
-            LIMIT $3
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [external_id, min_importance, limit])
-            rows = result.result()
-
-            chunks = [self._chunk_row_to_model(row) for row in rows]
-
-            logger.debug(f"Retrieved {len(chunks)} valid longterm chunks for {external_id}")
-            return chunks
-
-    async def get_chunks_by_temporal_range(
-        self,
-        external_id: str,
-        start_date: datetime,
-        end_date: datetime,
-        limit: int = 100,
-    ) -> List[LongtermMemoryChunk]:
-        """
-        Get chunks valid during a specific time range.
-
-        Args:
-            external_id: Agent identifier
-            start_date: Range start
-            end_date: Range end
-            limit: Maximum chunks
-
-        Returns:
-            List of LongtermMemoryChunk objects
-        """
-        query = """
-            SELECT id, external_id, shortterm_memory_id, content, 
-                   importance, start_date, last_updated, access_count, last_access, metadata
-            FROM longterm_memory_chunk
-            WHERE external_id = $1 
-              AND start_date >= $2
-              AND start_date <= $3
-            ORDER BY start_date DESC
-            LIMIT $4
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [external_id, start_date, end_date, limit])
-            rows = result.result()
-
-            chunks = [self._chunk_row_to_model(row) for row in rows]
-
-            logger.debug(
-                f"Retrieved {len(chunks)} temporal chunks for {external_id} "
-                f"({start_date} to {end_date})"
-            )
-            return chunks
-
     async def update_chunk(
         self,
         chunk_id: int,
@@ -302,20 +225,6 @@ class LongtermMemoryRepository:
             logger.info(f"Updated longterm chunk {chunk_id}")
             return chunk
 
-    async def supersede_chunk(self, chunk_id: int, end_date: Optional[datetime] = None) -> bool:
-        """
-        Mark a chunk as superseded by deleting it.
-        (Note: end_date parameter is kept for backwards compatibility but is not used)
-
-        Args:
-            chunk_id: Chunk ID
-            end_date: Deprecated parameter (not used)
-
-        Returns:
-            True if deleted
-        """
-        return await self.delete_chunk(chunk_id)
-
     async def delete_chunk(self, chunk_id: int) -> bool:
         """
         Delete a chunk.
@@ -372,7 +281,11 @@ class LongtermMemoryRepository:
         vector_weight: float = 0.5,
         bm25_weight: float = 0.5,
         min_importance: float = 0.0,
-        only_valid: bool = True,
+        shortterm_memory_id: Optional[int] = None,
+        min_similarity_score: Optional[float] = None,
+        min_bm25_score: Optional[float] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
     ) -> List[LongtermMemoryChunk]:
         """
         Hybrid search combining vector similarity and BM25.
@@ -385,7 +298,11 @@ class LongtermMemoryRepository:
             vector_weight: Weight for vector similarity (0-1)
             bm25_weight: Weight for BM25 score (0-1)
             min_importance: Minimum importance score
-            only_valid: Kept for backwards compatibility (not used)
+            shortterm_memory_id: Optional filter by source shortterm memory ID
+            min_similarity_score: Optional minimum vector similarity threshold
+            min_bm25_score: Optional minimum BM25 score threshold
+            start_date: Optional start date for temporal filtering (start_date >= start_date)
+            end_date: Optional end date for temporal filtering (last_updated <= end_date)
 
         Returns:
             List of LongtermMemoryChunk with combined scores
@@ -399,6 +316,9 @@ class LongtermMemoryRepository:
                     1 - (embedding <=> $1) AS vector_score
                 FROM longterm_memory_chunk
                 WHERE external_id = $2 AND embedding IS NOT NULL
+                AND ($8::int IS NULL OR shortterm_memory_id = $8)
+                AND ($9::timestamp IS NULL OR start_date >= $9)
+                AND ($10::timestamp IS NULL OR last_updated <= $10)
             ),
             bm25_results AS (
                 SELECT 
@@ -406,18 +326,28 @@ class LongtermMemoryRepository:
                     content_bm25 <&> to_bm25query('idx_longterm_chunk_bm25', tokenize($3, 'bert')) AS bm25_score
                 FROM longterm_memory_chunk
                 WHERE external_id = $2 AND content_bm25 IS NOT NULL
+                AND ($8::int IS NULL OR shortterm_memory_id = $8)
+                AND ($9::timestamp IS NULL OR start_date >= $9)
+                AND ($10::timestamp IS NULL OR last_updated <= $10)
             )
             SELECT 
                 c.id, c.external_id, c.shortterm_memory_id, c.content, 
                 c.importance, c.start_date, c.last_updated, c.access_count, c.last_access,
                 c.metadata, c.created_at,
-                COALESCE(v.vector_score, 0) * $4 + COALESCE(b.bm25_score, 0) * $5 AS combined_score
+                COALESCE(v.vector_score, 0) * $4 + COALESCE(b.bm25_score, 0) * $5 AS combined_score,
+                COALESCE(v.vector_score, 0) AS vector_score,
+                COALESCE(b.bm25_score, 0) AS bm25_score
             FROM longterm_memory_chunk c
             LEFT JOIN vector_results v ON c.id = v.id
             LEFT JOIN bm25_results b ON c.id = b.id
             WHERE c.external_id = $2
+              AND ($8::int IS NULL OR c.shortterm_memory_id = $8)
+              AND ($9::timestamp IS NULL OR c.start_date >= $9)
+              AND ($10::timestamp IS NULL OR c.last_updated <= $10)
               AND (v.vector_score IS NOT NULL OR b.bm25_score IS NOT NULL)
               AND c.importance >= $6
+              AND ($11::float IS NULL OR COALESCE(v.vector_score, 0) >= $11)
+              AND ($12::float IS NULL OR COALESCE(b.bm25_score, 0) >= $12)
             ORDER BY combined_score DESC
             LIMIT $7
         """
@@ -433,6 +363,11 @@ class LongtermMemoryRepository:
                     bm25_weight,
                     min_importance,
                     limit,
+                    shortterm_memory_id,
+                    start_date,
+                    end_date,
+                    min_similarity_score,
+                    min_bm25_score,
                 ],
             )
             rows = result.result()
@@ -440,11 +375,305 @@ class LongtermMemoryRepository:
             chunks = []
             for row in rows:
                 chunk = self._chunk_row_to_model(row[:11])
-                chunk.similarity_score = float(row[11])  # Store combined score
+                chunk.similarity_score = float(row[11])  # combined_score
+                chunk.bm25_score = float(row[13]) if row[13] is not None else None  # bm25_score
                 chunks.append(chunk)
 
             logger.debug(f"Hybrid search found {len(chunks)} longterm chunks for {external_id}")
             return chunks
+
+    async def increment_chunk_access(self, chunk_id: int) -> Optional[LongtermMemoryChunk]:
+        """
+        Increment access count and update last access timestamp for a chunk.
+
+        Args:
+            chunk_id: Chunk ID
+
+        Returns:
+            Updated LongtermMemoryChunk or None if not found
+        """
+        query = """
+            UPDATE longterm_memory_chunk
+            SET access_count = access_count + 1,
+                last_access = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING id, external_id, shortterm_memory_id, content, importance,
+                      start_date, last_updated, access_count, last_access, metadata, created_at
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [chunk_id])
+            rows = result.result()
+
+            if not rows:
+                return None
+
+            return self._chunk_row_to_model(rows[0])
+
+    async def search_entities_with_relationships(
+        self,
+        entity_names: List[str],
+        external_id: str,
+        limit: int = 10,
+        min_importance: Optional[float] = None,
+    ) -> LongtermEntityRelationshipSearchResult:
+        """
+        Search for entities by name and return them with their relationships.
+
+        This performs a graph search starting from entities matching the query names,
+        then includes all incoming and outgoing relationships.
+
+        Args:
+            entity_names: List of entity names to search for (case-insensitive partial match)
+            external_id: Agent identifier
+            limit: Maximum number of matched entities to return
+            min_importance: Optional minimum importance threshold
+
+        Returns:
+            LongtermEntityRelationshipSearchResult containing matched entities,
+            related entities, and all connecting relationships
+        """
+        # Build Cypher query
+        query = """
+        MATCH (e:LongtermEntity)
+        WHERE e.external_id = $external_id
+        """
+
+        # Add name matching conditions
+        name_conditions = []
+        for i, name in enumerate(entity_names):
+            name_conditions.append(f"toLower(e.name) CONTAINS toLower(${i + 2})")
+        if name_conditions:
+            query += f" AND ({' OR '.join(name_conditions)})"
+
+        # Add optional filters
+        if min_importance is not None:
+            query += f" AND e.importance >= ${len(entity_names) + 2}"
+
+        query += f"""
+        WITH e
+        LIMIT ${len(entity_names) + 3}
+
+        // Get incoming relationships
+        OPTIONAL MATCH (other)-[r_in:LONGTERM_RELATES]->(e)
+        WHERE other.external_id = $external_id
+
+        // Get outgoing relationships
+        OPTIONAL MATCH (e)-[r_out:LONGTERM_RELATES]->(other2)
+        WHERE other2.external_id = $external_id
+
+        RETURN e,
+               collect(DISTINCT other) as related_incoming,
+               collect(DISTINCT other2) as related_outgoing,
+               collect(DISTINCT r_in) as relationships_in,
+               collect(DISTINCT r_out) as relationships_out
+        """
+
+        # Build parameters
+        params = [external_id] + entity_names
+        if min_importance is not None:
+            params.append(min_importance)
+        params.append(limit)
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, params)
+            records = await result.fetch(-1)  # Fetch all
+
+        # Process results
+        matched_entities = []
+        related_entities = []
+        relationships = []
+        entity_ids_seen = set()
+        relationship_ids_seen = set()
+
+        for record in records:
+            # Process matched entity
+            entity_data = record["e"]
+            entity = LongtermEntity(
+                id=entity_data.element_id,
+                external_id=entity_data["external_id"],
+                name=entity_data["name"],
+                types=entity_data.get("types", []),
+                description=entity_data.get("description"),
+                importance=entity_data.get("importance", 0.5),
+                access_count=entity_data.get("access_count", 0),
+                last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
+                metadata=entity_data.get("metadata", {}),
+            )
+            matched_entities.append(entity)
+            entity_ids_seen.add(entity.id)
+
+            # Process incoming related entities
+            for other_data in record["related_incoming"]:
+                if other_data and other_data.element_id not in entity_ids_seen:
+                    other_entity = LongtermEntity(
+                        id=other_data.element_id,
+                        external_id=other_data["external_id"],
+                        name=other_data["name"],
+                        types=other_data.get("types", []),
+                        description=other_data.get("description"),
+                        importance=other_data.get("importance", 0.5),
+                        access_count=other_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(other_data.get("last_access")),
+                        metadata=other_data.get("metadata", {}),
+                    )
+                    related_entities.append(other_entity)
+                    entity_ids_seen.add(other_entity.id)
+
+            # Process outgoing related entities
+            for other_data in record["related_outgoing"]:
+                if other_data and other_data.element_id not in entity_ids_seen:
+                    other_entity = LongtermEntity(
+                        id=other_data.element_id,
+                        external_id=other_data["external_id"],
+                        name=other_data["name"],
+                        types=other_data.get("types", []),
+                        description=other_data.get("description"),
+                        importance=other_data.get("importance", 0.5),
+                        access_count=other_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(other_data.get("last_access")),
+                        metadata=other_data.get("metadata", {}),
+                    )
+                    related_entities.append(other_entity)
+                    entity_ids_seen.add(other_entity.id)
+
+            # Process incoming relationships
+            for rel_data in record["relationships_in"]:
+                if rel_data and rel_data.element_id not in relationship_ids_seen:
+                    relationship = LongtermRelationship(
+                        id=rel_data.element_id,
+                        external_id=rel_data["external_id"],
+                        from_entity_id=rel_data["from_entity_id"],
+                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_name=rel_data.get("from_entity_name"),
+                        to_entity_name=rel_data.get("to_entity_name"),
+                        types=rel_data.get("types", []),
+                        description=rel_data.get("description"),
+                        importance=rel_data.get("importance", 0.5),
+                        start_date=rel_data["start_date"],
+                        access_count=rel_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
+                        metadata=rel_data.get("metadata", {}),
+                    )
+                    relationships.append(relationship)
+                    relationship_ids_seen.add(relationship.id)
+
+            # Process outgoing relationships
+            for rel_data in record["relationships_out"]:
+                if rel_data and rel_data.element_id not in relationship_ids_seen:
+                    relationship = LongtermRelationship(
+                        id=rel_data.element_id,
+                        external_id=rel_data["external_id"],
+                        from_entity_id=rel_data["from_entity_id"],
+                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_name=rel_data.get("from_entity_name"),
+                        to_entity_name=rel_data.get("to_entity_name"),
+                        types=rel_data.get("types", []),
+                        description=rel_data.get("description"),
+                        importance=rel_data.get("importance", 0.5),
+                        start_date=rel_data["start_date"],
+                        access_count=rel_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
+                        metadata=rel_data.get("metadata", {}),
+                    )
+                    relationships.append(relationship)
+                    relationship_ids_seen.add(relationship.id)
+
+        return LongtermEntityRelationshipSearchResult(
+            query_entity_names=entity_names,
+            external_id=external_id,
+            matched_entities=matched_entities,
+            related_entities=related_entities,
+            relationships=relationships,
+            metadata={
+                "total_matched_entities": len(matched_entities),
+                "total_related_entities": len(related_entities),
+                "total_relationships": len(relationships),
+                "min_importance": min_importance,
+            },
+        )
+
+    async def increment_entity_access(self, entity_id: str) -> Optional[LongtermEntity]:
+        """
+        Increment access count and update last access timestamp for an entity.
+
+        Args:
+            entity_id: Neo4j elementId of the entity
+
+        Returns:
+            Updated LongtermEntity or None if not found
+        """
+        query = """
+        MATCH (e:LongtermEntity)
+        WHERE elementId(e) = $entity_id
+        SET e.access_count = e.access_count + 1,
+            e.last_access = datetime()
+        RETURN e
+        """
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, {"entity_id": entity_id})
+            record = await result.single()
+
+            if not record:
+                return None
+
+            entity_data = record["e"]
+            return LongtermEntity(
+                id=entity_data.element_id,
+                external_id=entity_data["external_id"],
+                name=entity_data["name"],
+                types=entity_data.get("types", []),
+                description=entity_data.get("description"),
+                importance=entity_data.get("importance", 0.5),
+                access_count=entity_data.get("access_count", 0),
+                last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
+                metadata=entity_data.get("metadata", {}),
+            )
+
+    async def increment_relationship_access(
+        self, relationship_id: str
+    ) -> Optional[LongtermRelationship]:
+        """
+        Increment access count and update last access timestamp for a relationship.
+
+        Args:
+            relationship_id: Neo4j elementId of the relationship
+
+        Returns:
+            Updated LongtermRelationship or None if not found
+        """
+        query = """
+        MATCH ()-[r:LONGTERM_RELATES]->()
+        WHERE elementId(r) = $relationship_id
+        SET r.access_count = r.access_count + 1,
+            r.last_access = datetime()
+        RETURN r
+        """
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, {"relationship_id": relationship_id})
+            record = await result.single()
+
+            if not record:
+                return None
+
+            rel_data = record["r"]
+            return LongtermRelationship(
+                id=rel_data.element_id,
+                external_id=rel_data["external_id"],
+                from_entity_id=rel_data["from_entity_id"],
+                to_entity_id=rel_data["to_entity_id"],
+                from_entity_name=rel_data.get("from_entity_name"),
+                to_entity_name=rel_data.get("to_entity_name"),
+                types=rel_data.get("types", []),
+                description=rel_data.get("description"),
+                importance=rel_data.get("importance", 0.5),
+                start_date=rel_data["start_date"],
+                access_count=rel_data.get("access_count", 0),
+                last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
+                metadata=rel_data.get("metadata", {}),
+            )
 
     # =========================================================================
     # NEO4J ENTITY OPERATIONS

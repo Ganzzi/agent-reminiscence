@@ -242,3 +242,63 @@ class ConsolidationConflicts(BaseModel):
     relationship_conflicts: List[ConflictRelationshipDetail] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# SEARCH RESULT MODELS (for enhanced search features)
+# ============================================================================
+
+
+class ShorttermEntityRelationshipSearchResult(BaseModel):
+    """
+    Result from entity/relationship graph search in shortterm memory.
+
+    Represents a subgraph centered around entities matching the search query.
+    """
+
+    query_entity_names: List[str] = Field(description="Original entity names used in search")
+    external_id: str = Field(description="Agent identifier")
+    shortterm_memory_id: Optional[int] = Field(
+        default=None, description="Optional memory ID filter"
+    )
+    matched_entities: List[ShorttermEntity] = Field(
+        default_factory=list, description="Entities directly matching query names"
+    )
+    related_entities: List[ShorttermEntity] = Field(
+        default_factory=list, description="Entities connected via relationships"
+    )
+    relationships: List[ShorttermRelationship] = Field(
+        default_factory=list,
+        description="All relationships connecting matched and related entities",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Search metadata (filters, timing, etc.)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LongtermEntityRelationshipSearchResult(BaseModel):
+    """
+    Result from entity/relationship graph search in longterm memory.
+
+    Similar to shortterm but without memory_id constraint.
+    """
+
+    query_entity_names: List[str] = Field(description="Original entity names used in search")
+    external_id: str = Field(description="Agent identifier")
+    matched_entities: List[LongtermEntity] = Field(
+        default_factory=list, description="Entities directly matching query names"
+    )
+    related_entities: List[LongtermEntity] = Field(
+        default_factory=list, description="Entities connected via relationships"
+    )
+    relationships: List[LongtermRelationship] = Field(
+        default_factory=list,
+        description="All relationships connecting matched and related entities",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Search metadata (filters, timing, etc.)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)

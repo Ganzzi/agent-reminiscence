@@ -319,10 +319,7 @@ class MemoryManager:
         Retrieve memories across all tiers using MemoryRetrieveAgent.
 
         Workflow:
-        1. Use MemoryRetrieveAgent to determine optimal search strategy
-        2. Get active memories
-        3. Search shortterm/longterm based on strategy
-        4. Use MemoryRetrieveAgent to synthesize results
+
 
         Args:
             external_id: Agent identifier
@@ -339,104 +336,7 @@ class MemoryManager:
         logger.info(f"Retrieving memories for {external_id}, query: {query[:50]}...")
 
         try:
-            # 1. Use agent to determine search strategy
-            logger.info("Using MemoryRetrieveAgent to determine search strategy...")
-            active_memories = await self.get_active_memories(external_id)
-
-            search_strategy = await self.retriever_agent.determine_strategy(
-                external_id=external_id,
-                query=query,
-                active_memories=active_memories,
-            )
-
-            logger.info(
-                f"Search strategy: active={search_strategy.search_active}, "
-                f"shortterm={search_strategy.search_shortterm}, "
-                f"longterm={search_strategy.search_longterm}, "
-                f"weights=({search_strategy.vector_weight:.2f}/{search_strategy.bm25_weight:.2f})"
-            )
-
-            # 2. Initialize result containers
-            shortterm_chunks = []
-            longterm_chunks = []
-            entities = []
-            relationships = []
-
-            # Generate query embedding for vector search
-            query_embedding = await self.embedding_service.get_embedding(query)
-
-            # 3. Search shortterm memory if strategy enables it
-            if search_strategy.search_shortterm and search_shortterm and self.shortterm_repo:
-                try:
-                    shortterm_chunks = await self.shortterm_repo.hybrid_search(
-                        external_id=external_id,
-                        query_text=query,
-                        query_embedding=query_embedding,
-                        vector_weight=search_strategy.vector_weight,
-                        bm25_weight=search_strategy.bm25_weight,
-                        limit=search_strategy.limit_per_tier,
-                    )
-                    logger.info(f"Found {len(shortterm_chunks)} shortterm chunks")
-                except Exception as e:
-                    logger.error(f"Shortterm search failed: {e}", exc_info=True)
-
-            # 4. Search longterm memory if strategy enables it
-            if search_strategy.search_longterm and search_longterm and self.longterm_repo:
-                try:
-                    longterm_chunks = await self.longterm_repo.hybrid_search(
-                        external_id=external_id,
-                        query_text=query,
-                        query_embedding=query_embedding,
-                        vector_weight=search_strategy.vector_weight,
-                        bm25_weight=search_strategy.bm25_weight,
-                        only_valid=True,  # Only get currently valid chunks
-                        limit=search_strategy.limit_per_tier,
-                    )
-                    logger.info(f"Found {len(longterm_chunks)} longterm chunks")
-                except Exception as e:
-                    logger.error(f"Longterm search failed: {e}", exc_info=True)
-
-            # 5. Use agent to synthesize results
-            logger.info("Using MemoryRetrieveAgent to synthesize results...")
-            synthesis = await self.retriever_agent.synthesize_results(
-                external_id=external_id,
-                query=query,
-                active_memories=active_memories if search_strategy.search_active else [],
-                shortterm_chunks=shortterm_chunks,
-                longterm_chunks=longterm_chunks,
-            )
-
-            # Format synthesized response
-            synthesized_response = f"{synthesis.summary}\n\n" f"Key Points:\n" + "\n".join(
-                f"- {point}" for point in synthesis.key_points
-            )
-            if synthesis.gaps:
-                synthesized_response += f"\n\nGaps: {', '.join(synthesis.gaps)}"
-
-            # Note: Entity/relationship retrieval from Neo4j is not currently implemented
-            # in the retrieve_memories flow. Entities are extracted and stored during
-            # consolidation (see consolidate_to_shortterm), but direct entity-based
-            # search is not yet available. To enable entity search:
-            # 1. Add entity name/type filters to search parameters
-            # 2. Query Neo4j for matching entities
-            # 3. Use entity relationships to expand search context
-            # For now, entities are populated during consolidation only.
-            result = RetrievalResult(
-                query=query,
-                active_memories=active_memories if search_strategy.search_active else [],
-                shortterm_chunks=shortterm_chunks,
-                longterm_chunks=longterm_chunks,
-                entities=entities,  # Currently empty - not retrieved in this flow
-                relationships=relationships,  # Currently empty - not retrieved in this flow
-                synthesized_response=synthesized_response,
-            )
-
-            logger.info(
-                f"Memory retrieval complete (importance: {synthesis.importance:.2f}): "
-                f"{len(result.active_memories)} active, "
-                f"{len(shortterm_chunks)} shortterm, {len(longterm_chunks)} longterm"
-            )
-            return result
+            pass
 
         except Exception as e:
             logger.error(f"Agent-based retrieval failed: {e}", exc_info=True)
@@ -464,117 +364,7 @@ class MemoryManager:
 
         logger.info(f"Basic retrieval (no agent) for {external_id}, query: {query[:50]}...")
 
-        # Get active memories
-        active_memories = await self.get_active_memories(external_id)
-
-        # Initialize result containers
-        shortterm_chunks = []
-        longterm_chunks = []
-        entities = []
-        relationships = []
-
-        # Generate query embedding for vector search
-        query_embedding = await self.embedding_service.get_embedding(query)
-
-        # Search shortterm memory if enabled
-        if search_shortterm and self.shortterm_repo:
-            try:
-                shortterm_chunks = await self.shortterm_repo.hybrid_search(
-                    external_id=external_id,
-                    query_text=query,
-                    query_embedding=query_embedding,
-                    vector_weight=self.config.vector_weight,
-                    bm25_weight=self.config.bm25_weight,
-                    limit=limit,
-                )
-                logger.info(f"Found {len(shortterm_chunks)} shortterm chunks")
-            except Exception as e:
-                logger.error(f"Shortterm search failed: {e}", exc_info=True)
-
-        # Search longterm memory if enabled
-        if search_longterm and self.longterm_repo:
-            try:
-                longterm_chunks = await self.longterm_repo.hybrid_search(
-                    external_id=external_id,
-                    query_text=query,
-                    query_embedding=query_embedding,
-                    vector_weight=self.config.vector_weight,
-                    bm25_weight=self.config.bm25_weight,
-                    only_valid=True,
-                    limit=limit,
-                )
-                logger.info(f"Found {len(longterm_chunks)} longterm chunks")
-            except Exception as e:
-                logger.error(f"Longterm search failed: {e}", exc_info=True)
-
-        # Build synthesized response (simple version)
-        synthesized_response = self._synthesize_retrieval_response(
-            active_memories=active_memories,
-            shortterm_chunks=shortterm_chunks,
-            longterm_chunks=longterm_chunks,
-            query=query,
-        )
-
-        result = RetrievalResult(
-            query=query,
-            active_memories=active_memories,
-            shortterm_chunks=shortterm_chunks,
-            longterm_chunks=longterm_chunks,
-            entities=entities,
-            relationships=relationships,
-            synthesized_response=synthesized_response,
-        )
-
-        logger.info(
-            f"Basic memory retrieval complete: {len(active_memories)} active, "
-            f"{len(shortterm_chunks)} shortterm, {len(longterm_chunks)} longterm"
-        )
-        return result
-
-    def _synthesize_retrieval_response(
-        self,
-        active_memories: List[ActiveMemory],
-        shortterm_chunks: List[ShorttermMemoryChunk],
-        longterm_chunks: List[LongtermMemoryChunk],
-        query: str,
-    ) -> str:
-        """
-        Synthesize a human-readable response from retrieved memories.
-
-        Args:
-            active_memories: Active memories
-            shortterm_chunks: Shortterm chunks
-            longterm_chunks: Longterm chunks
-            query: Original query
-
-        Returns:
-            Synthesized response string
-        """
-        parts = []
-
-        if active_memories:
-            parts.append(f"Found {len(active_memories)} active working memories.")
-
-        if shortterm_chunks:
-            top_chunk = shortterm_chunks[0]
-            score = getattr(top_chunk, "similarity_score", 0.0) or 0.0
-            parts.append(
-                f"Found {len(shortterm_chunks)} recent memory chunks "
-                f"(top relevance: {score:.2f})."
-            )
-
-        if longterm_chunks:
-            top_chunk = longterm_chunks[0]
-            score = getattr(top_chunk, "similarity_score", 0.0) or 0.0
-            parts.append(
-                f"Found {len(longterm_chunks)} consolidated knowledge chunks "
-                f"(top relevance: {score:.2f})."
-            )
-
-        if not parts:
-            return f"No memories found for query: {query}"
-
-        return " ".join(parts)
+        pass
 
     def _ensure_initialized(self) -> None:
         """Ensure manager is initialized."""

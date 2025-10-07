@@ -575,5 +575,217 @@ class TestEndToEndWorkflow:
         assert should_promote is True
 
 
+class TestAccessTrackingDuringWorkflow:
+    """Test access tracking during batch update and consolidation workflows."""
+
+    @pytest.mark.asyncio
+    async def test_chunk_access_during_consolidation(self, test_config):
+        """Test that chunks are accessed during consolidation."""
+        mock_pg = MagicMock()
+        mock_neo4j = MagicMock()
+        mock_conn = MagicMock()
+        mock_result = MagicMock()
+
+        # Mock chunk with initial access_count = 5
+        initial_row = (1, 1, "Test chunk", None, {}, 5, None)
+        updated_row = (1, 1, "Test chunk", None, {}, 6, datetime.now(timezone.utc))
+
+        # First call returns initial chunk, second returns updated
+        mock_result.result.side_effect = [[initial_row], [updated_row]]
+        mock_conn.execute = AsyncMock(return_value=mock_result)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+        mock_pg.connection.return_value = mock_conn
+
+        repo = ShorttermMemoryRepository(mock_pg, mock_neo4j)
+
+        # Simulate accessing chunk during consolidation
+        result = await repo.increment_chunk_access(1)
+        assert result.access_count == 6
+
+    @pytest.mark.asyncio
+    async def test_entity_access_during_search(self, test_config):
+        """Test entity access tracking during search operations."""
+        mock_pg = MagicMock()
+        mock_neo4j = MagicMock()
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_record = MagicMock()
+
+        # Mock entity with initial access_count = 3
+        mock_entity = MagicMock()
+        mock_entity.element_id = "entity-123"
+        mock_entity.__getitem__.side_effect = lambda key: {
+            "external_id": "test-123",
+            "shortterm_memory_id": 1,
+            "name": "Test Entity",
+            "types": ["PERSON"],
+            "importance": 0.8,
+            "access_count": 4,  # Incremented from 3
+            "last_access": datetime.now(timezone.utc),
+            "metadata": {},
+        }.get(key)
+
+        mock_record.__getitem__.return_value = mock_entity
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_neo4j.session.return_value = mock_session
+
+        repo = ShorttermMemoryRepository(mock_pg, mock_neo4j)
+        result = await repo.increment_entity_access("entity-123")
+
+        assert result.access_count == 4
+
+
+class TestSearchIntegration:
+    """Test search functionality integration with batch updates."""
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_with_memory_filter(self, test_config):
+        """Test hybrid search with memory_id filter during batch operations."""
+        mock_pg = MagicMock()
+        mock_neo4j = MagicMock()
+        mock_conn = MagicMock()
+        mock_result = MagicMock()
+
+        # Mock chunks from different memories
+        rows = [
+            (
+                1,
+                123,
+                "Memory 123 chunk",
+                None,
+                {},
+                0,
+                None,
+                datetime.now(timezone.utc),
+                0.8,
+                0.0,
+                0.0,
+            ),
+            (
+                2,
+                456,
+                "Memory 456 chunk",
+                None,
+                {},
+                0,
+                None,
+                datetime.now(timezone.utc),
+                0.7,
+                0.0,
+                0.0,
+            ),
+        ]
+        mock_result.result.return_value = rows
+        mock_conn.execute = AsyncMock(return_value=mock_result)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+        mock_pg.connection.return_value = mock_conn
+
+        repo = ShorttermMemoryRepository(mock_pg, mock_neo4j)
+
+        # Search with memory filter
+        results = await repo.hybrid_search(
+            external_id="test-123",
+            query_text="test",
+            query_embedding=[0.1] * 768,
+            shortterm_memory_id=123,  # Filter by memory
+        )
+
+        # Should only return chunks from specified memory
+        assert len(results) == 1
+        assert results[0].shortterm_memory_id == 123
+
+    @pytest.mark.asyncio
+    async def test_entity_search_after_consolidation(self, test_config):
+        """Test entity search works with consolidated memories."""
+        mock_pg = MagicMock()
+        mock_neo4j = MagicMock()
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_record = MagicMock()
+
+        # Mock consolidated entity
+        mock_entity = MagicMock()
+        mock_entity.element_id = "entity-consolidated"
+        mock_entity.__getitem__.side_effect = lambda key: {
+            "external_id": "test-123",
+            "shortterm_memory_id": 1,
+            "name": "Consolidated Entity",
+            "types": ["PERSON", "DEVELOPER"],
+            "importance": 0.9,
+            "access_count": 10,
+            "metadata": {"consolidated": True},
+        }.get(key)
+
+        mock_record.__getitem__.side_effect = lambda key: {
+            "e": mock_entity,
+            "related_incoming": [],
+            "related_outgoing": [],
+            "relationships_in": [],
+            "relationships_out": [],
+        }.get(key)
+
+        mock_result.fetch = AsyncMock(return_value=[mock_record])
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_neo4j.session.return_value = mock_session
+
+        repo = ShorttermMemoryRepository(mock_pg, mock_neo4j)
+        result = await repo.search_entities_with_relationships(
+            entity_names=["Consolidated"], external_id="test-123"
+        )
+
+        assert len(result.matched_entities) == 1
+        assert "consolidated" in result.matched_entities[0].metadata
+
+
+class TestAccessPatternsForImportance:
+    """Test that access patterns influence importance calculations."""
+
+    @pytest.mark.asyncio
+    async def test_high_access_entity_importance(self, test_config):
+        """Test that frequently accessed entities maintain higher importance."""
+        mock_pg = MagicMock()
+        mock_neo4j = MagicMock()
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_record = MagicMock()
+
+        # Mock high-access entity
+        mock_entity = MagicMock()
+        mock_entity.element_id = "high-access-entity"
+        mock_entity.__getitem__.side_effect = lambda key: {
+            "external_id": "test-123",
+            "name": "Important Person",
+            "types": ["PERSON"],
+            "importance": 0.95,
+            "access_count": 100,  # Very high access
+            "last_access": datetime.now(timezone.utc),
+            "metadata": {"frequently_accessed": True},
+        }.get(key)
+
+        mock_record.__getitem__.return_value = mock_entity
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_neo4j.session.return_value = mock_session
+
+        repo = ShorttermMemoryRepository(mock_pg, mock_neo4j)
+
+        # Access the entity multiple times
+        for i in range(3):
+            result = await repo.increment_entity_access("high-access-entity")
+            assert result.access_count == 100 + i + 1  # Starts at 100, increments each time
+
+        # Final access count should be high
+        assert result.access_count >= 103
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

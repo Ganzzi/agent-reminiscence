@@ -21,6 +21,7 @@ from agent_mem.database.models import (
     ShorttermMemoryChunk,
     ShorttermEntity,
     ShorttermRelationship,
+    ShorttermEntityRelationshipSearchResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -577,6 +578,9 @@ class ShorttermMemoryRepository:
         limit: int = 10,
         vector_weight: float = 0.5,
         bm25_weight: float = 0.5,
+        shortterm_memory_id: Optional[int] = None,
+        min_similarity_score: Optional[float] = None,
+        min_bm25_score: Optional[float] = None,
     ) -> List[ShorttermMemoryChunk]:
         """
         Hybrid search combining vector similarity and BM25.
@@ -588,6 +592,9 @@ class ShorttermMemoryRepository:
             limit: Maximum results
             vector_weight: Weight for vector similarity (0-1)
             bm25_weight: Weight for BM25 score (0-1)
+            shortterm_memory_id: Optional filter by specific memory ID
+            min_similarity_score: Optional minimum vector similarity threshold
+            min_bm25_score: Optional minimum BM25 score threshold
 
         Returns:
             List of ShorttermMemoryChunk with combined scores
@@ -601,6 +608,7 @@ class ShorttermMemoryRepository:
                     1 - (embedding <=> $1) AS vector_score
                 FROM shortterm_memory_chunk
                 WHERE external_id = $2 AND embedding IS NOT NULL
+                AND ($7::int IS NULL OR shortterm_memory_id = $7)
             ),
             bm25_results AS (
                 SELECT 
@@ -608,15 +616,21 @@ class ShorttermMemoryRepository:
                     content_bm25 <&> to_bm25query('idx_shortterm_chunk_bm25', tokenize($3, 'bert')) AS bm25_score
                 FROM shortterm_memory_chunk
                 WHERE external_id = $2 AND content_bm25 IS NOT NULL
+                AND ($7::int IS NULL OR shortterm_memory_id = $7)
             )
             SELECT 
-                c.id, c.shortterm_memory_id, c.external_id, c.content, c.metadata, c.created_at,
-                COALESCE(v.vector_score, 0) * $4 + COALESCE(b.bm25_score, 0) * $5 AS combined_score
+                c.id, c.shortterm_memory_id, c.external_id, c.content, c.section_id, c.metadata, c.access_count, c.last_access, c.created_at,
+                COALESCE(v.vector_score, 0) * $4 + COALESCE(b.bm25_score, 0) * $5 AS combined_score,
+                COALESCE(v.vector_score, 0) AS vector_score,
+                COALESCE(b.bm25_score, 0) AS bm25_score
             FROM shortterm_memory_chunk c
             LEFT JOIN vector_results v ON c.id = v.id
             LEFT JOIN bm25_results b ON c.id = b.id
             WHERE c.external_id = $2
+              AND ($7::int IS NULL OR c.shortterm_memory_id = $7)
               AND (v.vector_score IS NOT NULL OR b.bm25_score IS NOT NULL)
+              AND ($8::float IS NULL OR COALESCE(v.vector_score, 0) >= $8)
+              AND ($9::float IS NULL OR COALESCE(b.bm25_score, 0) >= $9)
             ORDER BY combined_score DESC
             LIMIT $6
         """
@@ -631,6 +645,9 @@ class ShorttermMemoryRepository:
                     vector_weight,
                     bm25_weight,
                     limit,
+                    shortterm_memory_id,
+                    min_similarity_score,
+                    min_bm25_score,
                 ],
             )
             rows = result.result()
@@ -656,10 +673,11 @@ class ShorttermMemoryRepository:
                         }
                     )
                     chunk.similarity_score = float(row["combined_score"])
-                elif isinstance(row, (list, tuple)) and len(row) >= 8:
-                    # Handle tuple format
-                    chunk = self._chunk_row_to_model(row[:7])
-                    chunk.similarity_score = float(row[7])  # Store combined score
+                elif isinstance(row, (list, tuple)) and len(row) >= 12:
+                    # Handle tuple format: id, shortterm_memory_id, external_id, content, section_id, metadata, access_count, last_access, created_at, combined_score, vector_score, bm25_score
+                    chunk = self._chunk_row_to_model(row[:9])  # First 9 columns for the model
+                    chunk.similarity_score = float(row[9])  # combined_score
+                    chunk.bm25_score = float(row[11]) if row[11] is not None else None  # bm25_score
                 else:
                     logger.error(f"Invalid row format in hybrid_search: {row}")
                     continue
@@ -667,6 +685,317 @@ class ShorttermMemoryRepository:
 
             logger.debug(f"Hybrid search found {len(chunks)} chunks for {external_id}")
             return chunks
+
+    async def increment_chunk_access(self, chunk_id: int) -> Optional[ShorttermMemoryChunk]:
+        """
+        Increment access count and update last access timestamp for a chunk.
+
+        Args:
+            chunk_id: Chunk ID
+
+        Returns:
+            Updated ShorttermMemoryChunk or None if not found
+        """
+        query = """
+            UPDATE shortterm_memory_chunk
+            SET access_count = access_count + 1,
+                last_access = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING id, shortterm_memory_id, external_id, content, section_id, metadata, access_count, last_access, created_at
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [chunk_id])
+            rows = result.result()
+
+            if not rows:
+                return None
+
+            return self._chunk_row_to_model(rows[0])
+
+    async def search_entities_with_relationships(
+        self,
+        entity_names: List[str],
+        external_id: str,
+        limit: int = 10,
+        shortterm_memory_id: Optional[int] = None,
+        min_importance: Optional[float] = None,
+    ) -> ShorttermEntityRelationshipSearchResult:
+        """
+        Search for entities by name and return them with their relationships.
+
+        This performs a graph search starting from entities matching the query names,
+        then includes all incoming and outgoing relationships.
+
+        Args:
+            entity_names: List of entity names to search for (case-insensitive partial match)
+            external_id: Agent identifier
+            limit: Maximum number of matched entities to return
+            shortterm_memory_id: Optional filter by specific memory ID
+            min_importance: Optional minimum importance threshold
+
+        Returns:
+            ShorttermEntityRelationshipSearchResult containing matched entities,
+            related entities, and all connecting relationships
+        """
+        # Build Cypher query
+        query = """
+        MATCH (e:ShorttermEntity)
+        WHERE e.external_id = $external_id
+        """
+
+        # Add name matching conditions
+        name_conditions = []
+        for i, name in enumerate(entity_names):
+            name_conditions.append(f"toLower(e.name) CONTAINS toLower(${i + 2})")
+        if name_conditions:
+            query += f" AND ({' OR '.join(name_conditions)})"
+
+        # Add optional filters
+        if shortterm_memory_id is not None:
+            query += f" AND e.shortterm_memory_id = ${len(entity_names) + 2}"
+        if min_importance is not None:
+            query += f" AND e.importance >= ${len(entity_names) + 3}"
+
+        query += f"""
+        WITH e
+        LIMIT ${len(entity_names) + 4}
+
+        // Get incoming relationships
+        OPTIONAL MATCH (other)-[r_in:SHORTTERM_RELATES]->(e)
+        WHERE other.external_id = $external_id
+        """
+        if shortterm_memory_id is not None:
+            query += f" AND r_in.shortterm_memory_id = ${len(entity_names) + 2}"
+
+        query += """
+        // Get outgoing relationships
+        OPTIONAL MATCH (e)-[r_out:SHORTTERM_RELATES]->(other2)
+        WHERE other2.external_id = $external_id
+        """
+        if shortterm_memory_id is not None:
+            query += f" AND r_out.shortterm_memory_id = ${len(entity_names) + 2}"
+
+        query += """
+        RETURN e,
+               collect(DISTINCT other) as related_incoming,
+               collect(DISTINCT other2) as related_outgoing,
+               collect(DISTINCT r_in) as relationships_in,
+               collect(DISTINCT r_out) as relationships_out
+        """
+
+        # Build parameters
+        params = [external_id] + entity_names
+        if shortterm_memory_id is not None:
+            params.append(shortterm_memory_id)
+        if min_importance is not None:
+            params.append(min_importance)
+        params.append(limit)
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, params)
+            records = await result.fetch(-1)  # Fetch all
+
+        # Process results
+        matched_entities = []
+        related_entities = []
+        relationships = []
+        entity_ids_seen = set()
+        relationship_ids_seen = set()
+
+        for record in records:
+            # Process matched entity
+            entity_data = record["e"]
+            entity = ShorttermEntity(
+                id=entity_data.element_id,
+                external_id=entity_data["external_id"],
+                shortterm_memory_id=entity_data["shortterm_memory_id"],
+                name=entity_data["name"],
+                types=entity_data.get("types", []),
+                description=entity_data.get("description"),
+                importance=entity_data.get("importance", 0.5),
+                access_count=entity_data.get("access_count", 0),
+                last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
+                metadata=entity_data.get("metadata", {}),
+            )
+            matched_entities.append(entity)
+            entity_ids_seen.add(entity.id)
+
+            # Process incoming related entities
+            for other_data in record["related_incoming"]:
+                if other_data and other_data.element_id not in entity_ids_seen:
+                    other_entity = ShorttermEntity(
+                        id=other_data.element_id,
+                        external_id=other_data["external_id"],
+                        shortterm_memory_id=other_data["shortterm_memory_id"],
+                        name=other_data["name"],
+                        types=other_data.get("types", []),
+                        description=other_data.get("description"),
+                        importance=other_data.get("importance", 0.5),
+                        access_count=other_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(other_data.get("last_access")),
+                        metadata=other_data.get("metadata", {}),
+                    )
+                    related_entities.append(other_entity)
+                    entity_ids_seen.add(other_entity.id)
+
+            # Process outgoing related entities
+            for other_data in record["related_outgoing"]:
+                if other_data and other_data.element_id not in entity_ids_seen:
+                    other_entity = ShorttermEntity(
+                        id=other_data.element_id,
+                        external_id=other_data["external_id"],
+                        shortterm_memory_id=other_data["shortterm_memory_id"],
+                        name=other_data["name"],
+                        types=other_data.get("types", []),
+                        description=other_data.get("description"),
+                        importance=other_data.get("importance", 0.5),
+                        access_count=other_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(other_data.get("last_access")),
+                        metadata=other_data.get("metadata", {}),
+                    )
+                    related_entities.append(other_entity)
+                    entity_ids_seen.add(other_entity.id)
+
+            # Process incoming relationships
+            for rel_data in record["relationships_in"]:
+                if rel_data and rel_data.element_id not in relationship_ids_seen:
+                    relationship = ShorttermRelationship(
+                        id=rel_data.element_id,
+                        external_id=rel_data["external_id"],
+                        shortterm_memory_id=rel_data["shortterm_memory_id"],
+                        from_entity_id=rel_data["from_entity_id"],
+                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_name=rel_data.get("from_entity_name"),
+                        to_entity_name=rel_data.get("to_entity_name"),
+                        types=rel_data.get("types", []),
+                        description=rel_data.get("description"),
+                        importance=rel_data.get("importance", 0.5),
+                        access_count=rel_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
+                        metadata=rel_data.get("metadata", {}),
+                    )
+                    relationships.append(relationship)
+                    relationship_ids_seen.add(relationship.id)
+
+            # Process outgoing relationships
+            for rel_data in record["relationships_out"]:
+                if rel_data and rel_data.element_id not in relationship_ids_seen:
+                    relationship = ShorttermRelationship(
+                        id=rel_data.element_id,
+                        external_id=rel_data["external_id"],
+                        shortterm_memory_id=rel_data["shortterm_memory_id"],
+                        from_entity_id=rel_data["from_entity_id"],
+                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_name=rel_data.get("from_entity_name"),
+                        to_entity_name=rel_data.get("to_entity_name"),
+                        types=rel_data.get("types", []),
+                        description=rel_data.get("description"),
+                        importance=rel_data.get("importance", 0.5),
+                        access_count=rel_data.get("access_count", 0),
+                        last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
+                        metadata=rel_data.get("metadata", {}),
+                    )
+                    relationships.append(relationship)
+                    relationship_ids_seen.add(relationship.id)
+
+        return ShorttermEntityRelationshipSearchResult(
+            query_entity_names=entity_names,
+            external_id=external_id,
+            shortterm_memory_id=shortterm_memory_id,
+            matched_entities=matched_entities,
+            related_entities=related_entities,
+            relationships=relationships,
+            metadata={
+                "total_matched_entities": len(matched_entities),
+                "total_related_entities": len(related_entities),
+                "total_relationships": len(relationships),
+                "min_importance": min_importance,
+            },
+        )
+
+    async def increment_entity_access(self, entity_id: str) -> Optional[ShorttermEntity]:
+        """
+        Increment access count and update last access timestamp for an entity.
+
+        Args:
+            entity_id: Neo4j elementId of the entity
+
+        Returns:
+            Updated ShorttermEntity or None if not found
+        """
+        query = """
+        MATCH (e:ShorttermEntity)
+        WHERE elementId(e) = $entity_id
+        SET e.access_count = e.access_count + 1,
+            e.last_access = datetime()
+        RETURN e
+        """
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, {"entity_id": entity_id})
+            record = await result.single()
+
+            if not record:
+                return None
+
+            entity_data = record["e"]
+            return ShorttermEntity(
+                id=entity_data.element_id,
+                external_id=entity_data["external_id"],
+                shortterm_memory_id=entity_data["shortterm_memory_id"],
+                name=entity_data["name"],
+                types=entity_data.get("types", []),
+                description=entity_data.get("description"),
+                importance=entity_data.get("importance", 0.5),
+                access_count=entity_data.get("access_count", 0),
+                last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
+                metadata=entity_data.get("metadata", {}),
+            )
+
+    async def increment_relationship_access(
+        self, relationship_id: str
+    ) -> Optional[ShorttermRelationship]:
+        """
+        Increment access count and update last access timestamp for a relationship.
+
+        Args:
+            relationship_id: Neo4j elementId of the relationship
+
+        Returns:
+            Updated ShorttermRelationship or None if not found
+        """
+        query = """
+        MATCH ()-[r:SHORTTERM_RELATES]->()
+        WHERE elementId(r) = $relationship_id
+        SET r.access_count = r.access_count + 1,
+            r.last_access = datetime()
+        RETURN r
+        """
+
+        async with self.neo4j.session() as session:
+            result = await session.run(query, {"relationship_id": relationship_id})
+            record = await result.single()
+
+            if not record:
+                return None
+
+            rel_data = record["r"]
+            return ShorttermRelationship(
+                id=rel_data.element_id,
+                external_id=rel_data["external_id"],
+                shortterm_memory_id=rel_data["shortterm_memory_id"],
+                from_entity_id=rel_data["from_entity_id"],
+                to_entity_id=rel_data["to_entity_id"],
+                from_entity_name=rel_data.get("from_entity_name"),
+                to_entity_name=rel_data.get("to_entity_name"),
+                types=rel_data.get("types", []),
+                description=rel_data.get("description"),
+                importance=rel_data.get("importance", 0.5),
+                access_count=rel_data.get("access_count", 0),
+                last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
+                metadata=rel_data.get("metadata", {}),
+            )
 
     # =========================================================================
     # NEO4J ENTITY OPERATIONS
@@ -1297,15 +1626,29 @@ class ShorttermMemoryRepository:
                 metadata=row.get("metadata", {}),
             )
         elif isinstance(row, (list, tuple)):
-            # Expected tuple format: id, shortterm_memory_id, content, section_id, metadata, access_count, last_access
-            return ShorttermMemoryChunk(
-                id=row[0],
-                shortterm_memory_id=row[1],
-                content=row[2],
-                section_id=row[3] if isinstance(row[3], str) else None,
-                metadata=row[4] if len(row) > 4 and isinstance(row[4], dict) else {},
-                access_count=int(row[5]) if len(row) > 5 and row[5] is not None else 0,
-                last_access=row[6] if len(row) > 6 else None,
-            )
+            # Handle different tuple formats
+            if len(row) >= 9:
+                # Full format with external_id and created_at:
+                # id, shortterm_memory_id, external_id, content, section_id, metadata, access_count, last_access, created_at
+                return ShorttermMemoryChunk(
+                    id=row[0],
+                    shortterm_memory_id=row[1],
+                    content=row[3],
+                    section_id=row[4] if isinstance(row[4], str) else None,
+                    metadata=row[5] if isinstance(row[5], dict) else {},
+                    access_count=int(row[6]) if row[6] is not None else 0,
+                    last_access=row[7] if len(row) > 7 else None,
+                )
+            else:
+                # Legacy format: id, shortterm_memory_id, content, section_id, metadata, access_count, last_access
+                return ShorttermMemoryChunk(
+                    id=row[0],
+                    shortterm_memory_id=row[1],
+                    content=row[2],
+                    section_id=row[3] if isinstance(row[3], str) else None,
+                    metadata=row[4] if len(row) > 4 and isinstance(row[4], dict) else {},
+                    access_count=int(row[5]) if len(row) > 5 and row[5] is not None else 0,
+                    last_access=row[6] if len(row) > 6 else None,
+                )
         else:
             raise ValueError(f"Unsupported row format: {type(row)}")
