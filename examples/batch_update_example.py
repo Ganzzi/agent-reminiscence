@@ -199,24 +199,18 @@ No decisions yet
     print("Step 7: Checking shortterm memory...")
 
     # Search shortterm memory
-    result = await agent_mem.search_memories(
+    result = await agent_mem.retrieve_memories(
         external_id=agent_id,
         query="batch update",
-        search_shortterm=True,
-        search_longterm=False,
         limit=5,
     )
 
     print(f"✓ Search results:")
-    print(f"  - Shortterm chunks: {len(result.shortterm_chunks)}")
-    if result.shortterm_chunks:
-        # Check for section_id tracking
-        sample_chunk = result.shortterm_chunks[0]
-        if hasattr(sample_chunk, "section_id") and sample_chunk.section_id:
-            print(f"  - Section tracking: ✓ (chunks linked to source sections)")
-            print(f"    Example: chunk from section '{sample_chunk.section_id}'")
-        else:
-            print(f"  - Section tracking: (section_id not available in search results)")
+    shortterm_chunks = [c for c in result.chunks if c.tier == "shortterm"]
+    print(f"  - Shortterm chunks: {len(shortterm_chunks)}")
+    if shortterm_chunks:
+        # Check for section tracking (no longer tracked at chunk level in new structure)
+        print(f"  - Section tracking: (not tracked in retrieval results)")
     print()
 
     # =========================================================================

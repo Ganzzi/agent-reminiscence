@@ -221,11 +221,25 @@ async def memory_manager(
 @pytest.fixture
 def mock_memory_manager() -> MagicMock:
     """Create a mock MemoryManager."""
+    from agent_mem.database.models import RetrievalResult
+
     mock = MagicMock(spec=MemoryManager)
     mock.create_active_memory = AsyncMock()
     mock.get_active_memory = AsyncMock()
     mock.update_active_memory = AsyncMock()
-    mock.retrieve_memories = AsyncMock(return_value="Mock retrieved memories")
+
+    # Return proper RetrievalResult structure
+    mock_result = RetrievalResult(
+        mode="pointer",
+        chunks=[],
+        entities=[],
+        relationships=[],
+        synthesis=None,
+        search_strategy="Mock search",
+        confidence=1.0,
+        metadata={},
+    )
+    mock.retrieve_memories = AsyncMock(return_value=mock_result)
     return mock
 
 

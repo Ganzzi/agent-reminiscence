@@ -191,9 +191,6 @@ def sample_conflicts():
                 shortterm_importance=0.75,
                 active_importance=0.85,
                 merged_importance=0.8,
-                shortterm_strength=0.7,
-                active_strength=0.8,
-                merged_strength=0.75,
             )
         ],
     )

@@ -98,11 +98,20 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="search_memories",
             description=(
-                "Search across shortterm and longterm memory tiers. "
-                "This performs an intelligent search across the agent's memory tiers, "
-                "using vector similarity and BM25 search to find relevant information. "
-                "Results include matched chunks, related entities, relationships, and "
-                "an AI-synthesized response summarizing the findings."
+                "Search across shortterm and longterm memory tiers using intelligent AI-powered search. "
+                "Provide a natural language query describing your current context, what you're working on, "
+                "and what information you need. The AI will understand your intent and search across memory tiers "
+                "using vector similarity and BM25 hybrid search. "
+                "\n\n"
+                "Results include:\n"
+                "- Matched memory chunks with relevance scores\n"
+                "- Related entities and relationships from the knowledge graph\n"
+                "- Optional AI-synthesized summary (when force_synthesis=true or for complex queries)\n"
+                "\n\n"
+                "Example queries:\n"
+                "- 'Working on authentication, need to know how JWT tokens were implemented'\n"
+                "- 'Debugging API errors, what endpoints and error handling did we discuss?'\n"
+                "- 'Need context on the database schema design decisions'"
             ),
             inputSchema=SEARCH_MEMORIES_INPUT_SCHEMA,
         ),
@@ -292,9 +301,8 @@ async def _handle_search_memories(
     """Handle search_memories tool call."""
     external_id = arguments["external_id"]
     query = arguments["query"]
-    search_shortterm = arguments.get("search_shortterm", True)
-    search_longterm = arguments.get("search_longterm", True)
     limit = arguments.get("limit", 10)
+    synthesis = arguments.get("synthesis", False)
 
     # Validate inputs
     if not external_id or not external_id.strip():
@@ -306,49 +314,38 @@ async def _handle_search_memories(
     result = await agent_mem.retrieve_memories(
         external_id=external_id,
         query=query,
-        search_shortterm=search_shortterm,
-        search_longterm=search_longterm,
         limit=limit,
+        synthesis=synthesis,
     )
 
-    # Format response
+    # Format response using the new RetrievalResult structure
     response = {
-        "query": result.query,
-        "synthesized_response": result.synthesized_response,
-        "active_memories": [
-            {
-                "id": mem.id,
-                "title": mem.title,
-                "sections": mem.sections,
-            }
-            for mem in result.active_memories
-        ],
-        "shortterm_chunks": [
+        "mode": result.mode,
+        "search_strategy": result.search_strategy,
+        "confidence": result.confidence,
+        "chunks": [
             {
                 "id": chunk.id,
                 "content": chunk.content,
-                "similarity_score": chunk.similarity_score,
-                "bm25_score": chunk.bm25_score,
+                "tier": chunk.tier,
+                "score": chunk.score,
+                **({"importance": chunk.importance} if chunk.importance is not None else {}),
+                **(
+                    {"start_date": chunk.start_date.isoformat()}
+                    if chunk.start_date is not None
+                    else {}
+                ),
             }
-            for chunk in result.shortterm_chunks
-        ],
-        "longterm_chunks": [
-            {
-                "id": chunk.id,
-                "content": chunk.content,
-                "similarity_score": chunk.similarity_score,
-                "bm25_score": chunk.bm25_score,
-            }
-            for chunk in result.longterm_chunks
+            for chunk in result.chunks
         ],
         "entities": [
             {
                 "id": entity.id,
                 "name": entity.name,
-                "type": entity.type,
+                "types": entity.types,
                 "description": entity.description,
+                "tier": entity.tier,
                 "importance": entity.importance,
-                "memory_tier": entity.memory_tier,
             }
             for entity in result.entities
         ],
@@ -357,17 +354,17 @@ async def _handle_search_memories(
                 "id": rel.id,
                 "from_entity_name": rel.from_entity_name,
                 "to_entity_name": rel.to_entity_name,
-                "type": rel.type,
+                "types": rel.types,
                 "description": rel.description,
+                "tier": rel.tier,
                 "importance": rel.importance,
-                "memory_tier": rel.memory_tier,
             }
             for rel in result.relationships
         ],
+        "synthesis": result.synthesis,
+        "metadata": result.metadata,
         "result_counts": {
-            "active": len(result.active_memories),
-            "shortterm": len(result.shortterm_chunks),
-            "longterm": len(result.longterm_chunks),
+            "chunks": len(result.chunks),
             "entities": len(result.entities),
             "relationships": len(result.relationships),
         },

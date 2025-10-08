@@ -65,44 +65,6 @@ class ActiveMemoryRepository:
         external_id: str,
         title: str,
         template_content: str,
-        sections: Dict[str, Dict[str, Any]] = None,
-        metadata: Dict[str, Any] = None,
-    ) -> ActiveMemory:
-        """
-        Create a new active memory.
-
-        Active memories represent the agent's current working context -
-        tasks in progress, recent decisions, and immediate work context.
-
-        Uses template-driven structure:
-        - template_content: YAML template defining section structure
-        - sections: JSONB {section_id: {content: str, update_count: int}}
-
-        Example:
-            memory = await repo.create(
-                external_id="agent-123",
-                title="Task Memory",
-                template_content="template:\\n  id: task_v1...",
-                sections={
-                    "current_task": {"content": "# Task\\n...", "update_count": 0},
-                    "progress": {"content": "# Progress\\n...", "update_count": 0}
-                },
-                metadata={"priority": "high"}
-            )
-        """
-        """
-        Initialize repository.
-
-        Args:
-            postgres_manager: PostgreSQL connection manager
-        """
-        self.postgres = postgres_manager
-
-    async def create(
-        self,
-        external_id: str,
-        title: str,
-        template_content: str,
         sections: Dict[str, Dict[str, Any]],
         metadata: Dict[str, Any],
     ) -> ActiveMemory:
@@ -407,47 +369,6 @@ class ActiveMemoryRepository:
             logger.info(f"Reset all section update counts for memory {memory_id}")
             return True
 
-    async def update_metadata(
-        self,
-        memory_id: int,
-        metadata: Dict[str, Any],
-    ) -> Optional[ActiveMemory]:
-        """
-        Update metadata for an active memory.
-
-        Args:
-            memory_id: Memory ID
-            metadata: New metadata dictionary
-
-        Returns:
-            Updated ActiveMemory object or None if not found
-
-        Example:
-            updated = await repo.update_metadata(
-                memory_id=1,
-                metadata={"priority": "critical", "tags": ["urgent"]}
-            )
-        """
-        query = """
-            UPDATE active_memory
-            SET metadata = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-            RETURNING id, external_id, title, template_content, sections, 
-                      metadata, created_at, updated_at
-        """
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [metadata, memory_id])
-            rows = result.result()
-
-            if not rows:
-                logger.warning(f"Active memory {memory_id} not found for metadata update")
-                return None
-
-            memory = self._row_to_model(rows[0])
-            logger.info(f"Updated metadata for active memory {memory_id}")
-            return memory
-
     async def get_sections_needing_consolidation(
         self, external_id: str, threshold: int = 5
     ) -> List[Dict[str, Any]]:
@@ -526,26 +447,6 @@ class ActiveMemoryRepository:
             logger.info(f"Reset update_count for section '{section_id}' in memory {memory_id}")
             return True
 
-    async def count_by_external_id(self, external_id: str) -> int:
-        """
-        Count active memories for an external_id.
-
-        Args:
-            external_id: Agent identifier
-
-        Returns:
-            Count of active memories
-        """
-        query = "SELECT COUNT(*) FROM active_memory WHERE external_id = $1"
-
-        async with self.postgres.connection() as conn:
-            result = await conn.execute(query, [external_id])
-            row = result.result()[0]
-            count = row["count"]
-
-            logger.debug(f"Active memory count for {external_id}: {count}")
-            return count
-
     async def delete(self, memory_id: int) -> bool:
         """
         Delete an active memory.
@@ -579,3 +480,41 @@ class ActiveMemoryRepository:
 
         logger.info(f"Deleted active memory {memory_id}")
         return True
+
+    async def get_all_templates_by_external_id(self, external_id: str) -> List[Dict[str, str]]:
+        """
+        Get template_content from all active memories for an external_id.
+
+        Args:
+            external_id: Agent identifier
+
+        Returns:
+            List of dicts with 'memory_id', 'title', and 'template_content'
+
+        Example:
+            templates = await repo.get_all_templates_by_external_id("agent-123")
+            for tmpl in templates:
+                print(f"Memory {tmpl['memory_id']}: {tmpl['title']}")
+        """
+        query = """
+            SELECT id, title, template_content
+            FROM active_memory
+            WHERE external_id = $1
+            ORDER BY updated_at DESC
+        """
+
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(query, [external_id])
+            rows = result.result()
+
+            templates = [
+                {
+                    "memory_id": row["id"],
+                    "title": row["title"],
+                    "template_content": row["template_content"],
+                }
+                for row in rows
+            ]
+
+            logger.debug(f"Retrieved {len(templates)} templates for {external_id}")
+            return templates

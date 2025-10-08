@@ -180,13 +180,19 @@ async def main():
                 logger.info(f"      {status} {section_id}: {count} updates")
         logger.info("")
 
-        # 8. Try retrieval (stub for now)
+        # 8. Try retrieval
         logger.info("8. Searching memories for Agent 1...")
         result = await agent_mem.retrieve_memories(
             external_id=agent1_id, query="What is the current status of the dashboard?"
         )
-        logger.info(f"✓ Search result: {result.synthesized_response}")
-        logger.info(f"   Active memories found: {len(result.active_memories)}")
+        logger.info(f"✓ Search mode: {result.mode}")
+        logger.info(f"   Strategy: {result.search_strategy}")
+        logger.info(f"   Confidence: {result.confidence:.2f}")
+        if result.synthesis:
+            logger.info(f"   Synthesis: {result.synthesis}")
+        logger.info(f"   Chunks found: {len(result.chunks)}")
+        logger.info(f"   Entities found: {len(result.entities)}")
+        logger.info(f"   Relationships found: {len(result.relationships)}")
         logger.info("")
 
         logger.info("=== Example Complete ===")
@@ -195,20 +201,11 @@ async def main():
         logger.info("✓ Template-driven active memory with sections")
         logger.info("✓ Section-level update tracking")
         logger.info("✓ Per-section consolidation thresholds")
+        logger.info("✓ Intelligent memory retrieval with AI agent")
         logger.info("\nNext steps:")
-        logger.info("- Implement shortterm/longterm repositories")
-        logger.info("- Add Pydantic AI agents for intelligent consolidation")
-        logger.info("- Implement hybrid search (vector + BM25)")
-        logger.info("- Add entity/relationship extraction\n")
-        logger.info(f"   Active memories found: {len(result.active_memories)}")
-        logger.info("")
-
-        logger.info("=== Example Complete ===")
-        logger.info("\nNext steps:")
-        logger.info("- Implement shortterm/longterm repositories")
-        logger.info("- Add Pydantic AI agents for intelligent consolidation")
-        logger.info("- Implement hybrid search (vector + BM25)")
-        logger.info("- Add entity/relationship extraction\n")
+        logger.info("- Test consolidation workflow")
+        logger.info("- Test promotion to longterm memory")
+        logger.info("- Explore entity/relationship extraction\n")
 
     except Exception as e:
         logger.error(f"Error during example: {e}", exc_info=True)

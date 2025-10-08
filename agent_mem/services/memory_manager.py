@@ -23,6 +23,9 @@ from agent_mem.database.repositories import (
 from agent_mem.database.models import (
     ActiveMemory,
     RetrievalResult,
+    RetrievedChunk,
+    RetrievedEntity,
+    RetrievedRelationship,
     ShorttermMemory,
     ShorttermMemoryChunk,
     LongtermMemoryChunk,
@@ -35,6 +38,7 @@ from agent_mem.services.embedding import EmbeddingService
 from agent_mem.utils.helpers import chunk_text
 from agent_mem.agents import (
     MemoryRetrieveAgent,
+    retrieve_memory,
     extract_entities_and_relationships,
 )
 
@@ -311,60 +315,180 @@ class MemoryManager:
         self,
         external_id: str,
         query: str,
-        search_shortterm: bool = True,
-        search_longterm: bool = True,
         limit: int = 10,
+        synthesis: bool = False,
     ) -> RetrievalResult:
         """
         Retrieve memories across all tiers using MemoryRetrieveAgent.
 
-        Workflow:
-
+        Uses intelligent retrieval agent to:
+        - Analyze query and determine optimal search strategy
+        - Search across shortterm and longterm tiers
+        - Extract and rank relevant entities and relationships
+        - Optionally synthesize results into natural language
 
         Args:
             external_id: Agent identifier
             query: Search query
-            search_shortterm: Search shortterm memory (can be overridden by agent)
-            search_longterm: Search longterm memory (can be overridden by agent)
             limit: Maximum results per tier (can be overridden by agent)
+            synthesis: Force AI synthesis regardless of query complexity (default: False)
 
         Returns:
-            RetrievalResult object with aggregated results and AI synthesis
+            RetrievalResult object with aggregated results and optional AI synthesis
         """
         self._ensure_initialized()
 
         logger.info(f"Retrieving memories for {external_id}, query: {query[:50]}...")
 
         try:
-            pass
+            # Use the retrieve_memory function from memory_retriever agent
+            result = await retrieve_memory(
+                query=query,
+                external_id=external_id,
+                shortterm_repo=self.shortterm_repo,
+                longterm_repo=self.longterm_repo,
+                active_repo=self.active_repo,
+                embedding_service=self.embedding_service,
+                synthesis=synthesis,
+            )
+
+            logger.info(
+                f"Memory retrieval completed: mode={result.mode}, "
+                f"confidence={result.confidence:.2f}, "
+                f"{len(result.chunks)} chunks, {len(result.entities)} entities, "
+                f"{len(result.relationships)} relationships"
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Agent-based retrieval failed: {e}", exc_info=True)
             logger.warning("Falling back to basic retrieval...")
 
-            # Fallback to basic retrieval
-            return await self._retrieve_memories_basic(
-                external_id, query, search_shortterm, search_longterm, limit
-            )
+            # Fallback to basic retrieval (always search both tiers)
+            return await self._retrieve_memories_basic(external_id, query, limit)
 
     async def _retrieve_memories_basic(
         self,
         external_id: str,
         query: str,
-        search_shortterm: bool = True,
-        search_longterm: bool = True,
         limit: int = 10,
     ) -> RetrievalResult:
         """
         Fallback: Basic retrieval without AI agent.
 
         Used when MemoryRetrieveAgent fails or is unavailable.
+        Performs simple hybrid search across both tiers without intelligent ranking or synthesis.
+
+        Args:
+            external_id: Agent identifier
+            query: Search query
+            limit: Maximum results per tier
+
+        Returns:
+            RetrievalResult with basic search results (no synthesis)
         """
         self._ensure_initialized()
 
         logger.info(f"Basic retrieval (no agent) for {external_id}, query: {query[:50]}...")
 
-        pass
+        # Generate embedding for query
+        query_embedding = await self.embedding_service.generate_embedding(query)
+
+        chunks = []
+        entities = []
+        relationships = []
+
+        # Search shortterm memory
+        # Search shortterm memory
+        try:
+            st_chunks = await self.shortterm_repo.hybrid_search_chunks(
+                external_id=external_id,
+                query_text=query,
+                query_embedding=query_embedding,
+                limit=limit,
+                vector_weight=0.5,
+                bm25_weight=0.5,
+            )
+
+            for chunk in st_chunks:
+                # Calculate a combined score (average of available scores)
+                scores = []
+                if chunk.similarity_score is not None:
+                    scores.append(chunk.similarity_score)
+                if chunk.bm25_score is not None:
+                    scores.append(chunk.bm25_score)
+                combined_score = sum(scores) / len(scores) if scores else 0.0
+
+                chunks.append(
+                    RetrievedChunk(
+                        id=chunk.id,
+                        content=chunk.content,
+                        tier="shortterm",
+                        score=combined_score,
+                        importance=None,
+                        start_date=None,
+                    )
+                )
+
+            logger.info(f"Found {len(st_chunks)} shortterm chunks")
+        except Exception as e:
+            logger.error(f"Error searching shortterm chunks: {e}", exc_info=True)
+
+        # Search longterm memory
+        try:
+            lt_chunks = await self.longterm_repo.hybrid_search_chunks(
+                external_id=external_id,
+                query_text=query,
+                query_embedding=query_embedding,
+                limit=limit,
+                vector_weight=0.5,
+                bm25_weight=0.5,
+            )
+
+            for chunk in lt_chunks:
+                # Calculate a combined score (average of available scores)
+                scores = []
+                if chunk.similarity_score is not None:
+                    scores.append(chunk.similarity_score)
+                if chunk.bm25_score is not None:
+                    scores.append(chunk.bm25_score)
+                combined_score = sum(scores) / len(scores) if scores else 0.0
+
+                chunks.append(
+                    RetrievedChunk(
+                        id=chunk.id,
+                        content=chunk.content,
+                        tier="longterm",
+                        score=combined_score,
+                        importance=chunk.importance,
+                        start_date=chunk.start_date,
+                    )
+                )
+
+            logger.info(f"Found {len(lt_chunks)} longterm chunks")
+        except Exception as e:
+            logger.error(f"Error searching longterm chunks: {e}", exc_info=True)
+
+        # Sort chunks by score (descending)
+        chunks.sort(key=lambda x: x.score, reverse=True)
+
+        # Limit total chunks
+        chunks = chunks[: limit * 2]  # Allow more results since we're combining tiers
+
+        return RetrievalResult(
+            mode="pointer",
+            chunks=chunks,
+            entities=entities,
+            relationships=relationships,
+            synthesis=None,
+            search_strategy="Basic hybrid search (vector + BM25) across both tiers without AI agent",
+            confidence=0.5,  # Lower confidence for basic search
+            metadata={
+                "limit": limit,
+                "total_chunks": len(chunks),
+            },
+        )
 
     def _ensure_initialized(self) -> None:
         """Ensure manager is initialized."""
@@ -746,7 +870,6 @@ class MemoryManager:
                 active_confidence = (
                     active_rel.importance if hasattr(active_rel, "confidence") else 0.5
                 )
-                active_strength = active_rel.strength if hasattr(active_rel, "strength") else 0.5
                 active_description = (
                     active_rel.description if hasattr(active_rel, "description") else ""
                 )
@@ -760,17 +883,11 @@ class MemoryManager:
                     # Merge types
                     merged_types = list(set(shortterm_rel.types + active_types))
 
-                    # Recalculate confidence and strength
+                    # Recalculate confidence
                     merged_confidence = max(
                         (shortterm_rel.importance + active_confidence) / 2,
                         shortterm_rel.importance,
                         active_confidence,
-                    )
-
-                    merged_strength = max(
-                        (shortterm_rel.strength + active_strength) / 2,
-                        shortterm_rel.strength,
-                        active_strength,
                     )
 
                     # Use more detailed description
@@ -787,7 +904,6 @@ class MemoryManager:
                             types=merged_types,
                             description=merged_description,
                             confidence=merged_confidence,
-                            strength=merged_strength,
                         )
                     except Exception as e:
                         logger.warning(
@@ -806,9 +922,6 @@ class MemoryManager:
                             shortterm_importance=shortterm_rel.importance,
                             active_confidence=active_confidence,
                             merged_confidence=merged_confidence,
-                            shortterm_strength=shortterm_rel.strength,
-                            active_strength=active_strength,
-                            merged_strength=merged_strength,
                         )
                     )
 
@@ -839,7 +952,6 @@ class MemoryManager:
                             types=active_types,
                             description=active_description,
                             importance=active_confidence,  # Using confidence as importance
-                            strength=active_strength,
                             metadata={},
                         )
 
@@ -1022,7 +1134,7 @@ class MemoryManager:
         6. Get all shortterm and longterm relationships
         7. Process each shortterm relationship:
            - If no relationship with same source+target exists: create new relationship
-           - If exists: merge types, recalculate confidence/strength, add state history to metadata
+           - If exists: merge types, recalculate confidence, add state history to metadata
         8. Update shortterm memory metadata with promotion history
 
         Args:
@@ -1290,11 +1402,6 @@ class MemoryManager:
                             min_conf = min(lt_match.importance, st_rel.importance)
                             new_confidence = 0.6 * max_conf + 0.4 * min_conf
 
-                            # Recalculate strength (weighted average, favoring stronger value)
-                            max_strength = max(lt_match.strength, st_rel.importance)
-                            min_strength = min(lt_match.strength, st_rel.importance)
-                            new_strength = 0.6 * max_strength + 0.4 * min_strength
-
                             # Add state history entry to metadata
                             now = datetime.now(timezone.utc)
                             state_history_entry = {
@@ -1305,8 +1412,6 @@ class MemoryManager:
                                 "new_types": merged_types,
                                 "old_importance": lt_match.importance,
                                 "new_confidence": new_confidence,
-                                "old_strength": lt_match.strength,
-                                "new_strength": new_strength,
                             }
 
                             # Get existing state_history array or create new
@@ -1319,7 +1424,6 @@ class MemoryManager:
                                 f"Updating longterm relationship: {from_name} -> {to_name} "
                                 f"(types {lt_match.types} -> {merged_types}, "
                                 f"importance {lt_match.importance:.2f} -> {new_confidence:.2f}, "
-                                f"strength {lt_match.strength:.2f} -> {new_strength:.2f})"
                             )
 
                             # Prepare metadata update
@@ -1335,7 +1439,6 @@ class MemoryManager:
                                 relationship_id=lt_match.id,
                                 types=merged_types,
                                 confidence=new_confidence,
-                                strength=new_strength,
                                 metadata=updated_metadata,
                             )
 
@@ -1362,12 +1465,11 @@ class MemoryManager:
                                     "shortterm_memory_id": shortterm_memory_id,
                                     "types": st_rel.types,
                                     "confidence": st_rel.importance,
-                                    "strength": st_rel.importance,
                                     "action": "created",
                                 }
                             ]
 
-                            # Calculate importance based on entity importance and relationship strength
+                            # Calculate importance based on entity and relationship importance
                             importance = st_rel.importance * 0.8 + st_rel.importance * 0.2
 
                             created_rel = await self.longterm_repo.create_relationship(
@@ -1376,7 +1478,6 @@ class MemoryManager:
                                 to_entity_id=to_lt_id,
                                 types=st_rel.types,
                                 description=st_rel.description or "",
-                                strength=st_rel.importance,
                                 importance=importance,
                                 metadata={
                                     **st_rel.metadata,

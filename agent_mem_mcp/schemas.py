@@ -34,7 +34,7 @@ UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "section_id": {
                         "type": "string",
-                        "description": "ID of the section to update",
+                        "description": "ID/Name of the section to update",
                     },
                     "new_content": {
                         "type": "string",
@@ -59,17 +59,20 @@ SEARCH_MEMORIES_INPUT_SCHEMA: dict[str, Any] = {
         },
         "query": {
             "type": "string",
-            "description": "Search query describing what information is needed",
-        },
-        "search_shortterm": {
-            "type": "boolean",
-            "description": "Whether to search shortterm memory",
-            "default": True,
-        },
-        "search_longterm": {
-            "type": "boolean",
-            "description": "Whether to search longterm memory",
-            "default": True,
+            "description": (
+                "Natural language query describing the context, problem, or information needed. "
+                "This should be a clear description that combines:\n"
+                "- Current context: What the user is working on or doing\n"
+                "- Problem/question: What issue they're facing or what they need to know\n"
+                "- Relevant details: Any specific aspects or constraints\n"
+                "- Time period: When applicable, include time context (helpful for longterm search)\n\n"
+                "Examples:\n"
+                "- 'Working on authentication system, need to know how JWT tokens were implemented'\n"
+                "- 'Debugging database connection issues, what configuration was used before?'\n"
+                "- 'Writing documentation for API endpoints, what are the main features?'\n"
+                "- 'Last week we discussed caching strategy, what were the decisions?'\n\n"
+                "The AI will understand and search for relevant memories based on this description."
+            ),
         },
         "limit": {
             "type": "integer",
@@ -77,6 +80,11 @@ SEARCH_MEMORIES_INPUT_SCHEMA: dict[str, Any] = {
             "default": 10,
             "minimum": 1,
             "maximum": 100,
+        },
+        "synthesis": {
+            "type": "boolean",
+            "description": "Generate AI summary of search results (default: false, AI decides)",
+            "default": False,
         },
     },
     "required": ["external_id", "query"],

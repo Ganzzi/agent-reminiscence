@@ -65,12 +65,20 @@ class TestEndToEndWorkflow:
 
             mock_mm_instance.update_active_memory_section = AsyncMock(side_effect=updates)
 
-            # Mock retrieve
-            mock_mm_instance.retrieve_memories = AsyncMock(
-                return_value=MagicMock(
-                    synthesized_response="Retrieved conversation history about test topic."
-                )
+            # Mock retrieve with proper RetrievalResult structure
+            from agent_mem.database.models import RetrievalResult
+
+            mock_retrieval_result = RetrievalResult(
+                mode="synthesis",
+                chunks=[],
+                entities=[],
+                relationships=[],
+                synthesis="Retrieved conversation history about test topic.",
+                search_strategy="Test search",
+                confidence=0.9,
+                metadata={},
             )
+            mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_retrieval_result)
 
             mock_mm.return_value = mock_mm_instance
 
@@ -105,8 +113,9 @@ class TestEndToEndWorkflow:
                 )
 
                 assert result is not None
-                assert hasattr(result, "synthesized_response")
-                assert len(result.synthesized_response) > 0
+                assert result.mode == "synthesis"
+                assert result.synthesis is not None
+                assert len(result.synthesis) > 0
 
 
 @pytest.mark.integration
@@ -233,10 +242,21 @@ class TestCrossTierSearch:
             patch("agent_mem.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
-            mock_mm_instance.retrieve_memories = AsyncMock(
-                return_value="Found results in active, shortterm, and longterm memories."
+            from agent_mem.database.models import RetrievalResult
+
+            mock_result = RetrievalResult(
+                mode="synthesis",
+                chunks=[],
+                entities=[],
+                relationships=[],
+                synthesis="Found results in active, shortterm, and longterm memories.",
+                search_strategy="Multi-tier search",
+                confidence=0.9,
+                metadata={},
             )
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
             async with AgentMem(config=test_config) as agent_mem:
@@ -245,7 +265,8 @@ class TestCrossTierSearch:
                     external_id="test-123",
                 )
 
-                assert "active" in result.lower() or "shortterm" in result.lower()
+                assert result.synthesis is not None
+                assert "memories" in result.synthesis.lower()
 
     @pytest.mark.asyncio
     async def test_hybrid_search_weighting(self, test_config):
@@ -256,12 +277,21 @@ class TestCrossTierSearch:
             patch("agent_mem.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            from agent_mem.database.models import RetrievalResult
 
-            # Different weights should affect results
-            mock_mm_instance.retrieve_memories = AsyncMock(
-                return_value="Hybrid search results with weighted combination."
+            mock_result = RetrievalResult(
+                mode="synthesis",
+                chunks=[],
+                entities=[],
+                relationships=[],
+                synthesis="Hybrid search results with weighted combination.",
+                search_strategy="Hybrid search (vector + BM25)",
+                confidence=0.85,
+                metadata={},
             )
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
             async with AgentMem(config=test_config) as agent_mem:

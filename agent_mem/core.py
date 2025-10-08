@@ -297,32 +297,32 @@ class AgentMem:
         self,
         external_id: str | UUID | int,
         query: str,
-        search_shortterm: bool = True,
-        search_longterm: bool = True,
         limit: int = 10,
+        synthesis: bool = False,
     ) -> RetrievalResult:
         """
         Search and retrieve relevant memories across shortterm and longterm tiers.
 
         This method uses the Memory Retrieve Agent to intelligently search across
         memory tiers, returning matched chunks, entities, and relationships along
-        with a synthesized response.
+        with optional synthesized response.
 
         Args:
             external_id: Unique identifier for the agent
             query: Search query describing what information is needed
-            search_shortterm: Whether to search shortterm memory (default: True)
-            search_longterm: Whether to search longterm memory (default: True)
             limit: Maximum results per tier (default: 10)
+            synthesis: Force AI synthesis of results regardless of query complexity (default: False)
 
         Returns:
             RetrievalResult containing:
-                - active_memories: Relevant active memories
-                - shortterm_chunks: Matched shortterm chunks with similarity scores
-                - longterm_chunks: Matched longterm chunks with similarity scores
-                - entities: Related entities from the graph
-                - relationships: Related relationships from the graph
-                - synthesized_response: AI-generated summary of findings
+                - mode: "pointer" or "synthesis" (determines if synthesis is included)
+                - chunks: List of RetrievedChunk objects with content, tier, and scores
+                - entities: List of RetrievedEntity objects from the graph
+                - relationships: List of RetrievedRelationship objects from the graph
+                - synthesis: Optional AI-generated summary (only in synthesis mode)
+                - search_strategy: Explanation of the search approach used
+                - confidence: Confidence score (0.0-1.0) in result relevance
+                - metadata: Additional search metadata (counts, timing, etc.)
 
         Raises:
             RuntimeError: If not initialized
@@ -332,19 +332,23 @@ class AgentMem:
             result = await agent_mem.retrieve_memories(
                 external_id="agent-123",
                 query="How did I implement authentication?",
-                search_shortterm=True,
-                search_longterm=True,
-                limit=5
+                limit=5,
+                synthesis=True  # Request AI summary
             )
 
-            print(result.synthesized_response)
+            print(f"Mode: {result.mode}")
+            print(f"Strategy: {result.search_strategy}")
+            print(f"Confidence: {result.confidence}")
 
-            for chunk in result.shortterm_chunks:
-                print(f"Chunk: {chunk.content}")
-                print(f"Similarity: {chunk.similarity_score}")
+            if result.synthesis:
+                print(f"Summary: {result.synthesis}")
+
+            for chunk in result.chunks:
+                print(f"Chunk: {chunk.content[:100]}...")
+                print(f"Tier: {chunk.tier}, Score: {chunk.score}")
 
             for entity in result.entities:
-                print(f"Entity: {entity.name} ({entity.type})")
+                print(f"Entity: {entity.name} (types: {entity.types})")
             ```
         """
         self._ensure_initialized()
@@ -354,9 +358,8 @@ class AgentMem:
         return await self._memory_manager.retrieve_memories(
             external_id=external_id_str,
             query=query,
-            search_shortterm=search_shortterm,
-            search_longterm=search_longterm,
             limit=limit,
+            synthesis=synthesis,
         )
 
     async def close(self) -> None:

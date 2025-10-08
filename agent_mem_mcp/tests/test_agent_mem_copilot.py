@@ -140,27 +140,29 @@ async def test_mcp_server():
             new_count = updated_memory.sections[section_to_update_2].get("update_count", 0)
             print(f"   ✅ Section updated! Update count: {current_count_2} → {new_count}")
         else:
-            print(f"   ⏭️  Skipping (only one section available)")  # Test 5: Search memories
+            print(f"   ⏭️  Skipping (only one section available)")
+
+        # Test 5: Search memories
         print(f"\n6️⃣  Testing search_memories...")
         print(f"      Query: 'logging implementation details'")
 
         result = await agent_mem.retrieve_memories(
             external_id=external_id,
             query="logging implementation details",
-            search_shortterm=True,
-            search_longterm=False,
             limit=5,
         )
 
         print(f"   ✅ Search completed!")
-        print(f"      Active memories: {len(result.active_memories)}")
-        print(f"      Shortterm chunks: {len(result.shortterm_chunks)}")
+        print(f"      Mode: {result.mode}")
+        print(f"      Strategy: {result.search_strategy}")
+        print(f"      Confidence: {result.confidence:.2f}")
+        print(f"      Chunks: {len(result.chunks)}")
         print(f"      Entities: {len(result.entities)}")
         print(f"      Relationships: {len(result.relationships)}")
 
-        if result.synthesized_response:
-            print(f"\n      Synthesized Response:")
-            print(f"      {result.synthesized_response[:200]}...")
+        if result.synthesis:
+            print(f"\n      Synthesis:")
+            print(f"      {result.synthesis[:200]}...")
 
         # Final verification
         print(f"\n7️⃣  Final verification - Getting all memories...")

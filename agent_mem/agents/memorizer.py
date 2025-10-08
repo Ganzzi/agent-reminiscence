@@ -14,8 +14,6 @@ from pydantic_ai import Agent, RunContext, Tool
 from agent_mem.config.settings import get_config
 from agent_mem.services.llm_model_provider import model_provider
 from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
-from agent_mem.utils.agent_logger import save_agent_run, log_usage_summary
-import json
 from agent_mem.database.models import (
     ConsolidationConflicts,
 )
@@ -401,9 +399,6 @@ def format_conflicts_as_text(conflicts: ConsolidationConflicts) -> str:
             lines.append(f"- Shortterm Importance: {rel.shortterm_importance}")
             lines.append(f"- Active Importance: {rel.active_importance}")
             lines.append(f"- Merged Importance: {rel.merged_importance}")
-            lines.append(f"- Shortterm Strength: {rel.shortterm_strength}")
-            lines.append(f"- Active Strength: {rel.active_strength}")
-            lines.append(f"- Merged Strength: {rel.merged_strength}")
             lines.append("")
 
     lines.append("---")
@@ -459,24 +454,6 @@ async def resolve_conflicts(
             f"{len(resolution.entity_updates)} entity updates, "
             f"{len(resolution.relationship_updates)} relationship updates"
         )
-
-        # Log usage summary
-        usage = result.usage()
-        log_usage_summary(usage, "memorizer")
-
-        # Save detailed logs to file
-        try:
-            saved_files = save_agent_run(
-                result=result,
-                agent_name="memorizer",
-                run_id=conflicts.external_id,
-                include_usage=True,
-                include_messages=True,
-            )
-            if saved_files["messages"]:
-                logger.info(f"Saved agent run logs to {saved_files['messages'].parent}")
-        except Exception as file_e:
-            logger.warning(f"Failed to save agent run logs: {file_e}", exc_info=True)
 
         return resolution
 

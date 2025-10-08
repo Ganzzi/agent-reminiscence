@@ -339,15 +339,14 @@ async def test_consolidation_workflow():
             result = await memory_manager._retrieve_memories_basic(
                 external_id=external_id,
                 query="consolidation test conversation memory",
-                search_shortterm=True,
-                search_longterm=False,
                 limit=10,
             )
 
-            if result.shortterm_chunks:
-                print(f"✅ Created {len(result.shortterm_chunks)} initial chunks")
-                for i, chunk in enumerate(result.shortterm_chunks[:3], 1):
-                    print(f"   {i}. [{chunk.section_id}] {chunk.content[:70]}...")
+            shortterm_chunks = [c for c in result.chunks if c.tier == "shortterm"]
+            if shortterm_chunks:
+                print(f"✅ Created {len(shortterm_chunks)} initial chunks")
+                for i, chunk in enumerate(shortterm_chunks[:3], 1):
+                    print(f"   {i}. {chunk.content[:70]}...")
             else:
                 print("❌ ERROR: No chunks created!")
                 return False
@@ -398,15 +397,14 @@ async def test_consolidation_workflow():
             result = await memory_manager._retrieve_memories_basic(
                 external_id=external_id,
                 query="consolidation conflict resolution memorizer advanced",
-                search_shortterm=True,
-                search_longterm=False,
                 limit=10,
             )
 
-            if result.shortterm_chunks:
-                print(f"\n📝 Final shortterm chunks ({len(result.shortterm_chunks)} total):")
-                for i, chunk in enumerate(result.shortterm_chunks[:5], 1):
-                    print(f"   {i}. [{chunk.section_id}] {chunk.content[:70]}...")
+            shortterm_chunks = [c for c in result.chunks if c.tier == "shortterm"]
+            if shortterm_chunks:
+                print(f"\n📝 Final shortterm chunks ({len(shortterm_chunks)} total):")
+                for i, chunk in enumerate(shortterm_chunks[:5], 1):
+                    print(f"   {i}. {chunk.content[:70]}...")
             else:
                 print("⚠️ No shortterm chunks found")
 
@@ -492,13 +490,12 @@ async def test_promotion_workflow():
             result = await memory_manager._retrieve_memories_basic(
                 external_id=external_id,
                 query="promotion test conversation",
-                search_shortterm=False,
-                search_longterm=True,
                 limit=5,
             )
-            if result.longterm_chunks:
+            longterm_chunks = [c for c in result.chunks if c.tier == "longterm"]
+            if longterm_chunks:
                 print("\n📝 Sample longterm chunks:")
-                for i, chunk in enumerate(result.longterm_chunks[:2], 1):
+                for i, chunk in enumerate(longterm_chunks[:2], 1):
                     print(f"   {i}. {chunk.content[:100]}...")
 
             # Clean up

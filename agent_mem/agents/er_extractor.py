@@ -153,27 +153,6 @@ SYSTEM_PROMPT = """You are an Entity and Relationship Extraction Specialist.
 **Your Role:**
 Extract entities and relationships from text content to build a knowledge graph.
 
-**Entity Types to Extract:**
-- PERSON: People, individuals, names
-- ORGANIZATION: Companies, institutions, groups
-- TECHNOLOGY: Technologies, systems, platforms
-- FRAMEWORK: Software frameworks (React, Django, etc.)
-- LIBRARY: Software libraries (pandas, requests, etc.)
-- TOOL: Development tools (Git, Docker, VS Code, etc.)
-- CONCEPT: Abstract concepts, ideas, methodologies
-- PROJECT: Projects, applications, products
-- LOCATION: Places, addresses, regions
-- EVENT: Events, milestones, releases
-
-**Relationship Types to Extract:**
-- WORKS_WITH: Person works with organization/person
-- USES: Entity uses technology/tool/library
-- DEPENDS_ON: Entity depends on another
-- PART_OF: Entity is part of larger entity
-- CREATED_BY: Entity created by person/organization
-- LOCATED_AT: Entity located at place
-- RELATED_TO: General relationship
-
 **Guidelines:**
 1. Extract ALL significant entities mentioned
 2. Use specific entity types (avoid OTHER unless truly ambiguous)
@@ -217,40 +196,103 @@ Extract entities and relationships from text content to build a knowledge graph.
 # =========================================================================
 
 
-def get_er_extractor_agent() -> Agent[None, ExtractionResult]:
+class ExtractionMode(str, Enum):
+    """Mode for ER Extractor Agent."""
+
+    ER = "ER"  # Entity and Relationship Extraction
+    ENTITY = "ENTITY"  # Entity Extraction Only
+
+
+def get_er_extractor_agent(
+    mode: ExtractionMode = ExtractionMode.ER,
+) -> Agent[None, ExtractionResult]:
     """
     Factory function to create the ER Extractor Agent.
+
+    Args:
+        mode: Extraction mode (ER or ENTITY)
 
     Returns:
         Configured Agent instance
     """
     config = get_config()
-
-    # Get model from provider using configuration
     model = model_provider.get_model(config.er_extractor_agent_model)
+
+    if mode == ExtractionMode.ENTITY:
+        system_prompt = """You are an Entity Extraction Specialist.
+
+**Your Role:**
+Extract entities from text content.
+
+**Entity Types to Extract:**
+- PERSON: People, individuals, names
+- ORGANIZATION: Companies, institutions, groups
+- TECHNOLOGY: Technologies, systems, platforms
+- FRAMEWORK: Software frameworks (React, Django, etc.)
+- LIBRARY: Software libraries (pandas, requests, etc.)
+- TOOL: Development tools (Git, Docker, VS Code, etc.)
+- CONCEPT: Abstract concepts, ideas, methodologies
+- PROJECT: Projects, applications, products
+- LOCATION: Places, addresses, regions
+- EVENT: Events, milestones, releases
+
+**Guidelines:**
+1. Extract ALL significant entities mentioned
+2. Use specific entity types (avoid OTHER unless truly ambiguous)
+3. Provide confidence scores (0.0-1.0):
+   - 1.0: Explicitly stated, no ambiguity
+   - 0.8-0.9: Clearly implied or stated
+   - 0.6-0.7: Reasonable inference
+   - 0.4-0.5: Weak inference or ambiguous
+4. Be consistent with entity names (use canonical forms)
+5. Include brief descriptions for context
+
+**Example Input:**
+"John works at Google. He uses Python and TensorFlow for ML projects."
+
+**Example Output:**
+{
+  "entities": [
+    {"name": "John", "type": "PERSON", "confidence": 1.0, "description": "Person working at Google"},
+    {"name": "Google", "type": "ORGANIZATION", "confidence": 1.0, "description": "Technology company"},
+    {"name": "Python", "type": "LANGUAGE", "confidence": 1.0, "description": "Programming language"},
+    {"name": "TensorFlow", "type": "LIBRARY", "confidence": 1.0, "description": "ML library"}
+  ]
+}
+
+**Important:**
+- Be thorough but precise
+- Provide output in the exact structure specified
+"""
+    else:
+        system_prompt = SYSTEM_PROMPT
 
     return Agent(
         model=model,
-        deps_type=None,  # No dependencies needed
-        system_prompt=SYSTEM_PROMPT,
+        deps_type=None,
+        system_prompt=system_prompt,
         output_type=ExtractionResult,
-        model_settings={
-            "temperature": 0.3,  # Low temperature for consistency
-        },
+        model_settings={"temperature": 0.3},
         retries=2,
     )
 
 
-# Create global agent instance (lazy initialization to avoid API key errors on import)
 _er_extractor_agent: Optional[Agent[None, ExtractionResult]] = None
+_entity_extractor_agent: Optional[Agent[None, ExtractionResult]] = None
 
 
-def _get_agent() -> Agent[None, ExtractionResult]:
-    """Get or create the ER Extractor Agent instance."""
-    global _er_extractor_agent
-    if _er_extractor_agent is None:
-        _er_extractor_agent = get_er_extractor_agent()
-    return _er_extractor_agent
+def _get_agent(mode: ExtractionMode = ExtractionMode.ER) -> Agent[None, ExtractionResult]:
+    """Get or create an agent instance based on the extraction mode."""
+    global _er_extractor_agent, _entity_extractor_agent
+
+    if mode == ExtractionMode.ENTITY:
+        if _entity_extractor_agent is None:
+            _entity_extractor_agent = get_er_extractor_agent(mode=ExtractionMode.ENTITY)
+        return _entity_extractor_agent
+    else:
+        if _er_extractor_agent is None:
+            _er_extractor_agent = get_er_extractor_agent(mode=ExtractionMode.ER)
+        return _er_extractor_agent
 
 
 # =========================================================================
@@ -267,23 +309,38 @@ async def extract_entities_and_relationships(content: str) -> ExtractionResult:
 
     Returns:
         ExtractionResult with entities and relationships
-
-    Raises:
-        Exception: If extraction fails after retries
     """
     logger.info(f"Extracting entities/relationships from {len(content)} characters")
-
     try:
-        agent = _get_agent()
+        agent = _get_agent(mode=ExtractionMode.ER)
         result = await agent.run(content)
-
         logger.info(
             f"Extracted {len(result.output.entities)} entities and "
             f"{len(result.output.relationships)} relationships"
         )
-
         return result.output
-
     except Exception as e:
-        logger.error(f"Entity extraction failed: {e}")
+        logger.error(f"Entity/relationship extraction failed: {e}")
+        raise
+
+
+async def extract_entities(content: str) -> List[str]:
+    """
+    Extract entity names only from text content.
+
+    Args:
+        content: Text content to analyze
+
+    Returns:
+        List of unique entity names
+    """
+    logger.info(f"Extracting entity names from {len(content)} characters")
+    try:
+        agent = _get_agent(mode=ExtractionMode.ENTITY)
+        result = await agent.run(content)
+        entity_names = list(set(entity.name for entity in result.output.entities))
+        logger.info(f"Extracted {len(entity_names)} unique entity names")
+        return entity_names
+    except Exception as e:
+        logger.error(f"Entity name extraction failed: {e}")
         raise

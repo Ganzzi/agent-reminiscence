@@ -281,12 +281,19 @@ async def main():
             new_content="- Designed UI\n- Set up project\n- Implemented charts"
         )
         
-        # 4. Retrieve memories (searches shortterm and longterm)
+        # 4. Retrieve memories (searches across all tiers)
         results = await agent_mem.retrieve_memories(
             external_id="agent-123",
-            query="What is the current progress on the dashboard?"
+            query="What is the current progress on the dashboard?",
+            limit=10,
+            synthesis=True  # Request AI summary of findings
         )
-        print(f"Search results: {results.synthesized_response}")
+        
+        # Access results
+        print(f"Mode: {results.mode}")  # "pointer" or "synthesis"
+        print(f"Found {len(results.chunks)} chunks, {len(results.entities)} entities")
+        if results.synthesis:
+            print(f"AI Summary: {results.synthesis}")
         
     finally:
         # Clean up connections
@@ -386,18 +393,17 @@ Automatically increments the section's update_count and triggers consolidation w
 
 **Returns:** Updated `ActiveMemory` object
 
-#### `async retrieve_memories(external_id: str | UUID | int, query: str, search_shortterm: bool = True, search_longterm: bool = True, limit: int = 10) -> RetrievalResult`
+#### `async retrieve_memories(external_id: str | UUID | int, query: str, limit: int = 10, synthesis: bool = False) -> RetrievalResult`
 
-Search and retrieve relevant memories for a specific agent.
+Search and retrieve relevant memories for a specific agent across all tiers.
 
 **Parameters:**
 - `external_id`: Unique identifier for the agent
-- `query`: Search query
-- `search_shortterm`: Whether to search shortterm memory
-- `search_longterm`: Whether to search longterm memory
-- `limit`: Maximum results per tier
+- `query`: Natural language search query describing the context and what information is needed
+- `limit`: Maximum results per tier (default: 10)
+- `synthesis`: Force AI to generate a synthesized summary of results (default: False, AI decides)
 
-**Returns:** `RetrievalResult` with matched chunks, entities, and relationships
+**Returns:** `RetrievalResult` with matched chunks, entities, relationships, and optional AI synthesis
 
 #### `async close() -> None`
 

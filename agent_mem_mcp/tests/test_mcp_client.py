@@ -58,8 +58,6 @@ async def test_mcp_server():
                         arguments={
                             "external_id": "test-agent-123",
                             "query": "test query",
-                            "search_shortterm": True,
-                            "search_longterm": True,
                             "limit": 5,
                         },
                     )

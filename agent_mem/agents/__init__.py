@@ -9,12 +9,14 @@ This module provides AI agents that enhance memory operations with:
 """
 
 from agent_mem.agents.er_extractor import (
+    extract_entities,
     extract_entities_and_relationships,
     ExtractionResult,
     ExtractedEntity,
     ExtractedRelationship,
     EntityType,
     RelationshipType,
+    ExtractionMode,
 )
 from agent_mem.agents.memorizer import (
     resolve_conflicts,
@@ -23,22 +25,48 @@ from agent_mem.agents.memorizer import (
     ConflictResolution,
 )
 from agent_mem.agents.memory_updater import MemoryUpdateAgent
-from agent_mem.agents.memory_retriever import MemoryRetrieveAgent
+from agent_mem.agents.memory_retriever import (
+    retrieve_memory,
+    ChunkPointer,
+    EntityPointer,
+    RelationshipPointer,
+    RetrievalResult,
+)
+from agent_mem.services.central_storage import CentralStorage, get_central_storage
+
+
+# Placeholder class for backward compatibility
+class MemoryRetrieveAgent:
+    """Placeholder - use retrieve_memory function instead."""
+
+    def __init__(self, config):
+        self.config = config
+
 
 __all__ = [
     # ER Extractor Agent
+    "extract_entities",
     "extract_entities_and_relationships",
     "ExtractionResult",
     "ExtractedEntity",
     "ExtractedRelationship",
     "EntityType",
     "RelationshipType",
+    "ExtractionMode",
     # Memorizer Agent
     "resolve_conflicts",
     "format_conflicts_as_text",
     "MemorizerDeps",
     "ConflictResolution",
+    # Memory Retriever Agent
+    "retrieve_memory",
+    "ChunkPointer",
+    "EntityPointer",
+    "RelationshipPointer",
+    "RetrievalResult",
+    "CentralStorage",
+    "get_central_storage",
+    "MemoryRetrieveAgent",  # Backward compatibility
     # Other Agents
     "MemoryUpdateAgent",
-    "MemoryRetrieveAgent",
 ]

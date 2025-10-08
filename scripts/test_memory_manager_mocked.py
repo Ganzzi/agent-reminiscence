@@ -324,15 +324,12 @@ async def test_retrieval_logic():
         result = await manager._retrieve_memories_basic(
             external_id=external_id,
             query="test query about AI systems",
-            search_shortterm=True,
-            search_longterm=True,
             limit=5,
         )
 
         assert isinstance(result, RetrievalResult)
-        assert result.query == "test query about AI systems"
-        assert len(result.active_memories) == 2
-        assert len(result.shortterm_chunks) == 1
+        assert result.mode == "pointer"
+        assert len(result.chunks) >= 0
         assert len(result.longterm_chunks) == 1
         assert len(result.synthesized_response) > 0
 

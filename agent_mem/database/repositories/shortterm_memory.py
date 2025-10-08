@@ -747,56 +747,68 @@ class ShorttermMemoryRepository:
         # Add name matching conditions
         name_conditions = []
         for i, name in enumerate(entity_names):
-            name_conditions.append(f"toLower(e.name) CONTAINS toLower(${i + 2})")
+            name_conditions.append(f"toLower(e.name) CONTAINS toLower($name_{i})")
         if name_conditions:
             query += f" AND ({' OR '.join(name_conditions)})"
 
         # Add optional filters
         if shortterm_memory_id is not None:
-            query += f" AND e.shortterm_memory_id = ${len(entity_names) + 2}"
+            query += f" AND e.shortterm_memory_id = $shortterm_memory_id"
         if min_importance is not None:
-            query += f" AND e.importance >= ${len(entity_names) + 3}"
+            query += f" AND e.importance >= $min_importance"
 
         query += f"""
         WITH e
-        LIMIT ${len(entity_names) + 4}
+        LIMIT $limit
 
-        // Get incoming relationships
+        // Get incoming relationships with their nodes
         OPTIONAL MATCH (other)-[r_in:SHORTTERM_RELATES]->(e)
         WHERE other.external_id = $external_id
         """
         if shortterm_memory_id is not None:
-            query += f" AND r_in.shortterm_memory_id = ${len(entity_names) + 2}"
+            query += f" AND r_in.shortterm_memory_id = $shortterm_memory_id"
 
         query += """
-        // Get outgoing relationships
+        // Get outgoing relationships with their nodes
         OPTIONAL MATCH (e)-[r_out:SHORTTERM_RELATES]->(other2)
         WHERE other2.external_id = $external_id
         """
         if shortterm_memory_id is not None:
-            query += f" AND r_out.shortterm_memory_id = ${len(entity_names) + 2}"
+            query += f" AND r_out.shortterm_memory_id = $shortterm_memory_id"
 
         query += """
         RETURN e,
                collect(DISTINCT other) as related_incoming,
                collect(DISTINCT other2) as related_outgoing,
-               collect(DISTINCT r_in) as relationships_in,
-               collect(DISTINCT r_out) as relationships_out
+               collect(DISTINCT {rel: r_in, from_id: elementId(other), to_id: elementId(e)}) as relationships_in,
+               collect(DISTINCT {rel: r_out, from_id: elementId(e), to_id: elementId(other2)}) as relationships_out
         """
 
-        # Build parameters
-        params = [external_id] + entity_names
+        # Build parameters as dictionary
+        params = {"external_id": external_id}
+        for i, name in enumerate(entity_names):
+            params[f"name_{i}"] = name
+
+        param_index = len(entity_names) + 2
         if shortterm_memory_id is not None:
-            params.append(shortterm_memory_id)
+            params["shortterm_memory_id"] = shortterm_memory_id
+            param_index += 1
         if min_importance is not None:
-            params.append(min_importance)
-        params.append(limit)
+            params["min_importance"] = min_importance
+            param_index += 1
+        params["limit"] = limit
+
+        logger.info(
+            f"Searching shortterm entities: names={entity_names}, external_id={external_id}, params={params}, query={query}"
+        )
 
         async with self.neo4j.session() as session:
             result = await session.run(query, params)
-            records = await result.fetch(-1)  # Fetch all
+            records = []
+            async for record in result:
+                records.append(record)
 
-        # Process results
+        logger.info(f"Found {len(records)} matching Neo4j entity records")  # Process results
         matched_entities = []
         related_entities = []
         relationships = []
@@ -816,7 +828,11 @@ class ShorttermMemoryRepository:
                 importance=entity_data.get("importance", 0.5),
                 access_count=entity_data.get("access_count", 0),
                 last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
-                metadata=entity_data.get("metadata", {}),
+                metadata=(
+                    json.loads(entity_data.get("metadata", "{}"))
+                    if entity_data.get("metadata")
+                    else {}
+                ),
             )
             matched_entities.append(entity)
             entity_ids_seen.add(entity.id)
@@ -834,7 +850,11 @@ class ShorttermMemoryRepository:
                         importance=other_data.get("importance", 0.5),
                         access_count=other_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(other_data.get("last_access")),
-                        metadata=other_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(other_data.get("metadata", "{}"))
+                            if other_data.get("metadata")
+                            else {}
+                        ),
                     )
                     related_entities.append(other_entity)
                     entity_ids_seen.add(other_entity.id)
@@ -852,20 +872,29 @@ class ShorttermMemoryRepository:
                         importance=other_data.get("importance", 0.5),
                         access_count=other_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(other_data.get("last_access")),
-                        metadata=other_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(other_data.get("metadata", "{}"))
+                            if other_data.get("metadata")
+                            else {}
+                        ),
                     )
                     related_entities.append(other_entity)
                     entity_ids_seen.add(other_entity.id)
 
             # Process incoming relationships
-            for rel_data in record["relationships_in"]:
-                if rel_data and rel_data.element_id not in relationship_ids_seen:
+            for rel_map in record["relationships_in"]:
+                # Skip if the map is null or the relationship is null
+                if not rel_map or not rel_map.get("rel"):
+                    continue
+
+                rel_data = rel_map["rel"]
+                if rel_data.element_id not in relationship_ids_seen:
                     relationship = ShorttermRelationship(
                         id=rel_data.element_id,
                         external_id=rel_data["external_id"],
                         shortterm_memory_id=rel_data["shortterm_memory_id"],
-                        from_entity_id=rel_data["from_entity_id"],
-                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_id=rel_map["from_id"],  # Get from the map
+                        to_entity_id=rel_map["to_id"],  # Get from the map
                         from_entity_name=rel_data.get("from_entity_name"),
                         to_entity_name=rel_data.get("to_entity_name"),
                         types=rel_data.get("types", []),
@@ -873,20 +902,29 @@ class ShorttermMemoryRepository:
                         importance=rel_data.get("importance", 0.5),
                         access_count=rel_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
-                        metadata=rel_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(rel_data.get("metadata", "{}"))
+                            if rel_data.get("metadata")
+                            else {}
+                        ),
                     )
                     relationships.append(relationship)
                     relationship_ids_seen.add(relationship.id)
 
             # Process outgoing relationships
-            for rel_data in record["relationships_out"]:
-                if rel_data and rel_data.element_id not in relationship_ids_seen:
+            for rel_map in record["relationships_out"]:
+                # Skip if the map is null or the relationship is null
+                if not rel_map or not rel_map.get("rel"):
+                    continue
+
+                rel_data = rel_map["rel"]
+                if rel_data.element_id not in relationship_ids_seen:
                     relationship = ShorttermRelationship(
                         id=rel_data.element_id,
                         external_id=rel_data["external_id"],
                         shortterm_memory_id=rel_data["shortterm_memory_id"],
-                        from_entity_id=rel_data["from_entity_id"],
-                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_id=rel_map["from_id"],  # Get from the map
+                        to_entity_id=rel_map["to_id"],  # Get from the map
                         from_entity_name=rel_data.get("from_entity_name"),
                         to_entity_name=rel_data.get("to_entity_name"),
                         types=rel_data.get("types", []),
@@ -894,7 +932,11 @@ class ShorttermMemoryRepository:
                         importance=rel_data.get("importance", 0.5),
                         access_count=rel_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
-                        metadata=rel_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(rel_data.get("metadata", "{}"))
+                            if rel_data.get("metadata")
+                            else {}
+                        ),
                     )
                     relationships.append(relationship)
                     relationship_ids_seen.add(relationship.id)
@@ -1031,6 +1073,10 @@ class ShorttermMemoryRepository:
         # Convert metadata to JSON string for Neo4j storage
         metadata_json = json.dumps(metadata or {})
 
+        logger.info(
+            f"Creating shortterm entity: name='{name}', external_id='{external_id}', shortterm_memory_id={shortterm_memory_id}"
+        )
+
         query = """
         CREATE (e:ShorttermEntity {
             external_id: $external_id,
@@ -1080,6 +1126,9 @@ class ShorttermMemoryRepository:
                 metadata=metadata_dict,
             )
 
+            logger.info(f"Created entity with Neo4j element_id={entity.id}")
+            return entity
+
             logger.info(f"Created shortterm entity {entity.id}: {name} with types {types}")
             return entity
 
@@ -1119,7 +1168,7 @@ class ShorttermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                importance=record["importance"],
+                importance=record["importance"] if record["importance"] is not None else 0.5,
                 access_count=record["access_count"] or 0,
                 last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=metadata_dict,
@@ -1157,7 +1206,7 @@ class ShorttermMemoryRepository:
                     name=record["name"],
                     types=record["types"] or [],
                     description=record["description"],
-                    importance=record["importance"],
+                    importance=record["importance"] if record["importance"] is not None else 0.5,
                     access_count=record["access_count"] or 0,
                     last_access=_convert_neo4j_datetime(record["last_access"]),
                     metadata=json.loads(record["metadata"]) if record["metadata"] else {},
@@ -1247,7 +1296,7 @@ class ShorttermMemoryRepository:
                 name=record["name"],
                 types=record["types"] or [],
                 description=record["description"],
-                importance=record["importance"],
+                importance=record["importance"] if record["importance"] is not None else 0.5,
                 access_count=record["access_count"] or 0,
                 last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
@@ -1290,7 +1339,6 @@ class ShorttermMemoryRepository:
         types: List[str],  # Changed from relationship_type: str to types: List[str]
         description: Optional[str] = None,
         importance: float = 0.5,
-        strength: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ShorttermRelationship:
         """
@@ -1304,7 +1352,6 @@ class ShorttermMemoryRepository:
             types: Relationship types (e.g., ['USES', 'DEPENDS_ON'])
             description: Optional description
             importance: Importance score (0-1)
-            strength: Relationship strength (0-1)
             metadata: Optional metadata
 
         Returns:
@@ -1417,7 +1464,7 @@ class ShorttermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                importance=record["importance"],
+                importance=record["importance"] if record["importance"] is not None else 0.5,
                 access_count=record["access_count"] or 0,
                 last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},
@@ -1461,7 +1508,7 @@ class ShorttermMemoryRepository:
                     to_entity_name=record["to_entity_name"],
                     types=record["types"] or [],
                     description=record["description"],
-                    importance=record["importance"],
+                    importance=record["importance"] if record["importance"] is not None else 0.5,
                     access_count=record["access_count"] or 0,
                     last_access=_convert_neo4j_datetime(record["last_access"]),
                     metadata=json.loads(record["metadata"]) if record["metadata"] else {},
@@ -1548,7 +1595,7 @@ class ShorttermMemoryRepository:
                 to_entity_name=record["to_entity_name"],
                 types=record["types"] or [],
                 description=record["description"],
-                importance=record["importance"],
+                importance=record["importance"] if record["importance"] is not None else 0.5,
                 access_count=record["access_count"] or 0,
                 last_access=_convert_neo4j_datetime(record["last_access"]),
                 metadata=json.loads(record["metadata"]) if record["metadata"] else {},

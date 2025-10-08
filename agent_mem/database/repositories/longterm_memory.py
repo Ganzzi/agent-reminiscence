@@ -374,9 +374,18 @@ class LongtermMemoryRepository:
 
             chunks = []
             for row in rows:
-                chunk = self._chunk_row_to_model(row[:11])
-                chunk.similarity_score = float(row[11])  # combined_score
-                chunk.bm25_score = float(row[13]) if row[13] is not None else None  # bm25_score
+                # Convert row first, then access score fields
+                chunk = self._chunk_row_to_model(row)
+                # Handle both dict and tuple row formats for score fields
+                if isinstance(row, dict):
+                    chunk.similarity_score = float(row["combined_score"])
+                    chunk.bm25_score = (
+                        float(row["bm25_score"]) if row.get("bm25_score") is not None else None
+                    )
+                else:
+                    # Tuple format: combined_score is at index 11, bm25_score at index 13
+                    chunk.similarity_score = float(row[11])
+                    chunk.bm25_score = float(row[13]) if row[13] is not None else None
                 chunks.append(chunk)
 
             logger.debug(f"Hybrid search found {len(chunks)} longterm chunks for {external_id}")
@@ -442,42 +451,53 @@ class LongtermMemoryRepository:
         # Add name matching conditions
         name_conditions = []
         for i, name in enumerate(entity_names):
-            name_conditions.append(f"toLower(e.name) CONTAINS toLower(${i + 2})")
+            name_conditions.append(f"toLower(e.name) CONTAINS toLower($name_{i})")
         if name_conditions:
             query += f" AND ({' OR '.join(name_conditions)})"
 
         # Add optional filters
         if min_importance is not None:
-            query += f" AND e.importance >= ${len(entity_names) + 2}"
+            query += f" AND e.importance >= $min_importance"
 
         query += f"""
         WITH e
-        LIMIT ${len(entity_names) + 3}
+        LIMIT $limit
 
-        // Get incoming relationships
+        // Get incoming relationships with their nodes
         OPTIONAL MATCH (other)-[r_in:LONGTERM_RELATES]->(e)
         WHERE other.external_id = $external_id
 
-        // Get outgoing relationships
+        // Get outgoing relationships with their nodes
         OPTIONAL MATCH (e)-[r_out:LONGTERM_RELATES]->(other2)
         WHERE other2.external_id = $external_id
 
         RETURN e,
                collect(DISTINCT other) as related_incoming,
                collect(DISTINCT other2) as related_outgoing,
-               collect(DISTINCT r_in) as relationships_in,
-               collect(DISTINCT r_out) as relationships_out
+               collect(DISTINCT {{rel: r_in, from_id: elementId(other), to_id: elementId(e)}}) as relationships_in,
+               collect(DISTINCT {{rel: r_out, from_id: elementId(e), to_id: elementId(other2)}}) as relationships_out
         """
 
-        # Build parameters
-        params = [external_id] + entity_names
+        # Build parameters as dictionary
+        params = {"external_id": external_id}
+        for i, name in enumerate(entity_names):
+            params[f"name_{i}"] = name
+
         if min_importance is not None:
-            params.append(min_importance)
-        params.append(limit)
+            params["min_importance"] = min_importance
+        params["limit"] = limit
+
+        logger.info(
+            f"Searching longterm entities: names={entity_names}, external_id={external_id}, params={params}, query={query}"
+        )
 
         async with self.neo4j.session() as session:
             result = await session.run(query, params)
-            records = await result.fetch(-1)  # Fetch all
+            records = []
+            async for record in result:
+                records.append(record)
+
+        logger.info(f"Found {len(records)} matching Neo4j entity records")
 
         # Process results
         matched_entities = []
@@ -498,7 +518,11 @@ class LongtermMemoryRepository:
                 importance=entity_data.get("importance", 0.5),
                 access_count=entity_data.get("access_count", 0),
                 last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
-                metadata=entity_data.get("metadata", {}),
+                metadata=(
+                    json.loads(entity_data.get("metadata", "{}"))
+                    if entity_data.get("metadata")
+                    else {}
+                ),
             )
             matched_entities.append(entity)
             entity_ids_seen.add(entity.id)
@@ -515,7 +539,11 @@ class LongtermMemoryRepository:
                         importance=other_data.get("importance", 0.5),
                         access_count=other_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(other_data.get("last_access")),
-                        metadata=other_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(other_data.get("metadata", "{}"))
+                            if other_data.get("metadata")
+                            else {}
+                        ),
                     )
                     related_entities.append(other_entity)
                     entity_ids_seen.add(other_entity.id)
@@ -532,49 +560,71 @@ class LongtermMemoryRepository:
                         importance=other_data.get("importance", 0.5),
                         access_count=other_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(other_data.get("last_access")),
-                        metadata=other_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(other_data.get("metadata", "{}"))
+                            if other_data.get("metadata")
+                            else {}
+                        ),
                     )
                     related_entities.append(other_entity)
                     entity_ids_seen.add(other_entity.id)
 
             # Process incoming relationships
-            for rel_data in record["relationships_in"]:
-                if rel_data and rel_data.element_id not in relationship_ids_seen:
+            for rel_map in record["relationships_in"]:
+                # Skip if the map is null or the relationship is null
+                if not rel_map or not rel_map.get("rel"):
+                    continue
+
+                rel_data = rel_map["rel"]
+                if rel_data.element_id not in relationship_ids_seen:
                     relationship = LongtermRelationship(
                         id=rel_data.element_id,
                         external_id=rel_data["external_id"],
-                        from_entity_id=rel_data["from_entity_id"],
-                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_id=rel_map["from_id"],  # Get from the map
+                        to_entity_id=rel_map["to_id"],  # Get from the map
                         from_entity_name=rel_data.get("from_entity_name"),
                         to_entity_name=rel_data.get("to_entity_name"),
                         types=rel_data.get("types", []),
                         description=rel_data.get("description"),
                         importance=rel_data.get("importance", 0.5),
-                        start_date=rel_data["start_date"],
+                        start_date=_convert_neo4j_datetime(rel_data.get("start_date")),
                         access_count=rel_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
-                        metadata=rel_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(rel_data.get("metadata", "{}"))
+                            if rel_data.get("metadata")
+                            else {}
+                        ),
                     )
                     relationships.append(relationship)
                     relationship_ids_seen.add(relationship.id)
 
             # Process outgoing relationships
-            for rel_data in record["relationships_out"]:
-                if rel_data and rel_data.element_id not in relationship_ids_seen:
+            for rel_map in record["relationships_out"]:
+                # Skip if the map is null or the relationship is null
+                if not rel_map or not rel_map.get("rel"):
+                    continue
+
+                rel_data = rel_map["rel"]
+                if rel_data.element_id not in relationship_ids_seen:
                     relationship = LongtermRelationship(
                         id=rel_data.element_id,
                         external_id=rel_data["external_id"],
-                        from_entity_id=rel_data["from_entity_id"],
-                        to_entity_id=rel_data["to_entity_id"],
+                        from_entity_id=rel_map["from_id"],  # Get from the map
+                        to_entity_id=rel_map["to_id"],  # Get from the map
                         from_entity_name=rel_data.get("from_entity_name"),
                         to_entity_name=rel_data.get("to_entity_name"),
                         types=rel_data.get("types", []),
                         description=rel_data.get("description"),
                         importance=rel_data.get("importance", 0.5),
-                        start_date=rel_data["start_date"],
+                        start_date=_convert_neo4j_datetime(rel_data.get("start_date")),
                         access_count=rel_data.get("access_count", 0),
                         last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
-                        metadata=rel_data.get("metadata", {}),
+                        metadata=(
+                            json.loads(rel_data.get("metadata", "{}"))
+                            if rel_data.get("metadata")
+                            else {}
+                        ),
                     )
                     relationships.append(relationship)
                     relationship_ids_seen.add(relationship.id)
@@ -628,7 +678,11 @@ class LongtermMemoryRepository:
                 importance=entity_data.get("importance", 0.5),
                 access_count=entity_data.get("access_count", 0),
                 last_access=_convert_neo4j_datetime(entity_data.get("last_access")),
-                metadata=entity_data.get("metadata", {}),
+                metadata=(
+                    json.loads(entity_data.get("metadata", "{}"))
+                    if entity_data.get("metadata")
+                    else {}
+                ),
             )
 
     async def increment_relationship_access(
@@ -672,7 +726,9 @@ class LongtermMemoryRepository:
                 start_date=rel_data["start_date"],
                 access_count=rel_data.get("access_count", 0),
                 last_access=_convert_neo4j_datetime(rel_data.get("last_access")),
-                metadata=rel_data.get("metadata", {}),
+                metadata=(
+                    json.loads(rel_data.get("metadata", "{}")) if rel_data.get("metadata") else {}
+                ),
             )
 
     # =========================================================================
@@ -1345,15 +1401,33 @@ class LongtermMemoryRepository:
 
     def _chunk_row_to_model(self, row) -> LongtermMemoryChunk:
         """Convert database row to LongtermMemoryChunk model."""
-        return LongtermMemoryChunk(
-            id=row[0],
-            external_id=row[1],
-            shortterm_memory_id=row[2],
-            content=row[3],
-            importance=float(row[4]),
-            start_date=row[5],
-            last_updated=row[6],
-            access_count=int(row[7]) if row[7] is not None else 0,
-            last_access=row[8],
-            metadata=row[9] if isinstance(row[9], dict) else {},
-        )
+        # Handle both dict and tuple/list row formats
+        if isinstance(row, dict):
+            return LongtermMemoryChunk(
+                id=row["id"],
+                external_id=row["external_id"],
+                shortterm_memory_id=row.get("shortterm_memory_id"),
+                content=row["content"],
+                importance=float(row["importance"]),
+                start_date=row.get("start_date"),
+                last_updated=row.get("last_updated"),
+                access_count=(
+                    int(row.get("access_count", 0)) if row.get("access_count") is not None else 0
+                ),
+                last_access=row.get("last_access"),
+                metadata=row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
+            )
+        else:
+            # Handle list/tuple format
+            return LongtermMemoryChunk(
+                id=row[0],
+                external_id=row[1],
+                shortterm_memory_id=row[2],
+                content=row[3],
+                importance=float(row[4]),
+                start_date=row[5],
+                last_updated=row[6],
+                access_count=int(row[7]) if row[7] is not None else 0,
+                last_access=row[8],
+                metadata=row[9] if isinstance(row[9], dict) else {},
+            )

@@ -195,13 +195,14 @@ class TestAgentMemRetrieval:
             from agent_mem.database.models import RetrievalResult
 
             result_obj = RetrievalResult(
-                query="Tell me about AI",
-                active_memories=[],
-                shortterm_chunks=[],
-                longterm_chunks=[],
+                mode="synthesis",
+                chunks=[],
                 entities=[],
                 relationships=[],
-                synthesized_response="Retrieved memories about AI and machine learning.",
+                synthesis="Retrieved memories about AI and machine learning.",
+                search_strategy="Hybrid search across shortterm and longterm tiers",
+                confidence=0.95,
+                metadata={"total_results": 5},
             )
 
             mock_mm_instance = MagicMock()
@@ -218,9 +219,9 @@ class TestAgentMemRetrieval:
             )
 
             assert result == result_obj
-            assert (
-                result.synthesized_response == "Retrieved memories about AI and machine learning."
-            )
+            assert result.mode == "synthesis"
+            assert result.synthesis == "Retrieved memories about AI and machine learning."
+            assert result.confidence == 0.95
             mock_mm_instance.retrieve_memories.assert_called_once()
 
     @pytest.mark.asyncio
@@ -231,13 +232,14 @@ class TestAgentMemRetrieval:
             from agent_mem.database.models import RetrievalResult
 
             result_obj = RetrievalResult(
-                query="AI",
-                active_memories=[],
-                shortterm_chunks=[],
-                longterm_chunks=[],
+                mode="synthesis",
+                chunks=[],
                 entities=[],
                 relationships=[],
-                synthesized_response="Important memories about AI.",
+                synthesis="Important memories about AI.",
+                search_strategy="Filtered search with limit=5",
+                confidence=0.88,
+                metadata={"limit": 5},
             )
 
             mock_mm_instance = MagicMock()
@@ -251,13 +253,11 @@ class TestAgentMemRetrieval:
             result = await agent_mem.retrieve_memories(
                 external_id="test-123",
                 query="AI",
-                search_shortterm=True,
-                search_longterm=True,
                 limit=5,
             )
 
             assert result == result_obj
-            assert result.synthesized_response == "Important memories about AI."
+            assert result.synthesis == "Important memories about AI."
 
 
 class TestAgentMemErrorHandling:

@@ -112,7 +112,7 @@ async def add_sample_data():
 
         print(f"\n   3. Search memories:")
         print(
-            f'      {{"external_id": "{external_id}", "query": "JWT authentication best practices", "search_shortterm": true, "search_longterm": true, "limit": 5}}'
+            f'      {{"external_id": "{external_id}", "query": "JWT authentication best practices", "limit": 5}}'
         )
 
         print("\n🚀 Run MCP client test:")

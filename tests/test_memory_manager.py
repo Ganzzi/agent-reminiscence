@@ -522,6 +522,7 @@ class TestMemoryManagerRetrieval:
             patch("agent_mem.services.memory_manager.PostgreSQLManager"),
             patch("agent_mem.services.memory_manager.Neo4jManager"),
             patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_mem.services.memory_manager.retrieve_memory") as mock_retrieve,
         ):
 
             from agent_mem.database.models import RetrievalResult
@@ -529,31 +530,32 @@ class TestMemoryManagerRetrieval:
             manager = MemoryManager(test_config)
             manager._initialized = True  # Bypass initialization check
 
-            # Mock all repositories with AsyncMock for async methods
+            # Mock repositories
             manager.active_repo = MagicMock()
-            manager.active_repo.get_all_by_external_id = AsyncMock(return_value=[])
-
             manager.shortterm_repo = MagicMock()
-            manager.shortterm_repo.hybrid_search = AsyncMock(return_value=[])
-
             manager.longterm_repo = MagicMock()
-            manager.longterm_repo.hybrid_search = AsyncMock(return_value=[])
-
-            # Mock embedding service
             manager.embedding_service = MagicMock()
-            manager.embedding_service.get_embedding = AsyncMock(return_value=[0.1] * 768)
 
-            # Mock the retriever agent
-            mock_agent = MagicMock()
-            mock_agent.determine_strategy = AsyncMock(
-                side_effect=Exception("Force basic retrieval")
+            # Mock retrieve_memory function to return a RetrievalResult
+            mock_result = RetrievalResult(
+                mode="pointer",
+                chunks=[],
+                entities=[],
+                relationships=[],
+                synthesis=None,
+                search_strategy="Test search strategy",
+                confidence=0.9,
+                metadata={"test": True},
             )
-            manager.retriever_agent = mock_agent
+            mock_retrieve.return_value = mock_result
 
             result = await manager.retrieve_memories(query="test query", external_id="test-123")
 
             assert isinstance(result, RetrievalResult)
-            assert result.query == "test query"
+            assert result.mode == "pointer"
+            assert result.search_strategy == "Test search strategy"
+            assert result.confidence == 0.9
+            mock_retrieve.assert_called_once()
 
 
 class TestMemoryManagerHelpers:

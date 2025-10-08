@@ -1,7 +1,7 @@
 """Pydantic models for Agent Mem."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -163,14 +163,81 @@ class LongtermRelationship(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RetrievalResult(BaseModel):
-    """Result from memory retrieval."""
+# ============================================================================
+# RETRIEVAL RESULT MODELS
+# ============================================================================
 
-    query: str
-    active_memories: List[ActiveMemory] = Field(default_factory=list)
-    shortterm_chunks: List[ShorttermMemoryChunk] = Field(default_factory=list)
-    longterm_chunks: List[LongtermMemoryChunk] = Field(default_factory=list)
-    synthesized_response: Optional[str] = None
+
+class RetrievedChunk(BaseModel):
+    """Resolved chunk data from retrieval."""
+
+    id: int
+    content: str
+    tier: Literal["shortterm", "longterm"]
+    score: float
+    importance: Optional[float] = None  # Only for longterm chunks
+    start_date: Optional[datetime] = None  # Only for longterm chunks
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetrievedEntity(BaseModel):
+    """Resolved entity data from retrieval."""
+
+    id: str
+    name: str
+    types: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    tier: Literal["shortterm", "longterm"]
+    importance: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetrievedRelationship(BaseModel):
+    """Resolved relationship data from retrieval."""
+
+    id: str
+    from_entity_name: Optional[str] = None
+    to_entity_name: Optional[str] = None
+    types: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    tier: Literal["shortterm", "longterm"]
+    importance: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetrievalResult(BaseModel):
+    """
+    Result from memory retrieval with resolved data.
+
+    Mode determines behavior:
+    - pointer: Returns resolved data from pointer IDs
+    - synthesis: Returns synthesized summary with resolved data
+    """
+
+    mode: Literal["pointer", "synthesis"] = Field(
+        description="Result mode: pointer (resolved IDs) or synthesis (with summary)"
+    )
+    chunks: List[RetrievedChunk] = Field(default_factory=list, description="Resolved chunk data")
+    entities: List[RetrievedEntity] = Field(
+        default_factory=list, description="Resolved entity data"
+    )
+    relationships: List[RetrievedRelationship] = Field(
+        default_factory=list, description="Resolved relationship data"
+    )
+    synthesis: Optional[str] = Field(
+        default=None, description="Natural language synthesis (only in synthesis mode)"
+    )
+    search_strategy: str = Field(description="Brief explanation of search approach and decisions")
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Confidence in result relevance (0-1)"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata about the search (counts, timing, etc.)",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
