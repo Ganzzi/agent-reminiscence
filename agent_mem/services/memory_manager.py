@@ -144,7 +144,7 @@ class MemoryManager:
         self,
         external_id: str,
         title: str,
-        template_content: str,
+        template_content: Dict[str, Any],  # Changed from str
         initial_sections: Dict[str, Dict[str, Any]],
         metadata: Dict[str, Any],
     ) -> ActiveMemory:
@@ -154,8 +154,12 @@ class MemoryManager:
         Args:
             external_id: Agent identifier
             title: Memory title
-            template_content: YAML template
-            initial_sections: Initial sections {section_id: {content, update_count}}
+            template_content: JSON template dict with structure:
+                {
+                    "template": {"id": "...", "name": "..."},
+                    "sections": [{"id": "...", "description": "..."}]
+                }
+            initial_sections: Initial sections {section_id: {content, update_count, ...}}
             metadata: Metadata dictionary
 
         Returns:
@@ -163,13 +167,19 @@ class MemoryManager:
         """
         self._ensure_initialized()
 
+        # Validate template structure
+        if "template" not in template_content:
+            raise ValueError("template_content must have 'template' key")
+        if "sections" not in template_content:
+            raise ValueError("template_content must have 'sections' key")
+
         logger.info(f"Creating active memory for {external_id}: {title}")
 
         memory = await self.active_repo.create(
             external_id=external_id,
             title=title,
             template_content=template_content,
-            sections=initial_sections,
+            initial_sections=initial_sections,
             metadata=metadata,
         )
 
@@ -199,44 +209,35 @@ class MemoryManager:
         self,
         external_id: str,
         memory_id: int,
-        sections: List[Dict[str, str]],
+        sections: List[Dict[str, Any]],  # Updated schema
     ) -> ActiveMemory:
         """
-        Update multiple sections in an active memory (batch update).
+        Upsert multiple sections in an active memory (batch operation).
 
-        After updating all sections, checks if total update count across all sections
-        exceeds threshold for consolidation. If threshold is met, triggers
-        consolidation in the background without blocking.
+        Supports inserting new sections and updating existing ones.
 
         Args:
             external_id: Agent identifier
             memory_id: Memory ID
-            sections: List of section updates with section_id and new_content
-                     Example: [{"section_id": "progress", "new_content": "..."}]
+            sections: List of section updates:
+                [
+                    {
+                        "section_id": "progress",
+                        "old_content": "# Old",  # Optional
+                        "new_content": "# New",
+                        "action": "replace"  # "replace" or "insert", default "replace"
+                    }
+                ]
 
         Returns:
             Updated ActiveMemory object
-
-        Raises:
-            ValueError: If memory not found or section invalid
-
-        Example:
-            >>> sections = [
-            ...     {"section_id": "progress", "new_content": "Updated progress..."},
-            ...     {"section_id": "notes", "new_content": "New notes..."}
-            ... ]
-            >>> memory = await manager.update_active_memory_sections(
-            ...     external_id="agent-123",
-            ...     memory_id=1,
-            ...     sections=sections
-            ... )
         """
         self._ensure_initialized()
 
-        logger.info(f"Updating {len(sections)} sections in memory {memory_id} for {external_id}")
+        logger.info(f"Upserting {len(sections)} sections in memory {memory_id} for {external_id}")
 
-        # Update all sections in repository (transactional)
-        memory = await self.active_repo.update_sections(
+        # Upsert all sections in repository
+        memory = await self.active_repo.upsert_sections(
             memory_id=memory_id,
             section_updates=sections,
         )
@@ -244,21 +245,19 @@ class MemoryManager:
         if not memory:
             raise ValueError(f"Active memory {memory_id} not found")
 
-        logger.info(f"Updated {len(sections)} sections in memory {memory_id}")
+        logger.info(f"Upserted {len(sections)} sections in memory {memory_id}")
 
-        # Calculate threshold based on total number of sections
+        # Calculate threshold and check consolidation (same logic as before)
         num_sections = len(memory.sections)
         threshold = self.config.avg_section_update_count_for_consolidation * num_sections
 
-        # Calculate total update count across all sections
         total_update_count = sum(
             section.get("update_count", 0) for section in memory.sections.values()
         )
 
         logger.debug(
             f"Total update count: {total_update_count}, "
-            f"Threshold: {threshold} ({num_sections} sections * "
-            f"{self.config.avg_section_update_count_for_consolidation})"
+            f"Threshold: {threshold} ({num_sections} sections)"
         )
 
         # Check if consolidation threshold is met
@@ -268,10 +267,8 @@ class MemoryManager:
                 f"Triggering consolidation in background..."
             )
 
-            # Start consolidation in background (non-blocking)
             task = asyncio.create_task(self._consolidate_with_lock(external_id, memory.id))
             self._background_tasks.add(task)
-            # Remove task from set when done
             task.add_done_callback(self._background_tasks.discard)
 
         return memory
@@ -393,7 +390,7 @@ class MemoryManager:
         logger.info(f"Basic retrieval (no agent) for {external_id}, query: {query[:50]}...")
 
         # Generate embedding for query
-        query_embedding = await self.embedding_service.generate_embedding(query)
+        query_embedding = await self.embedding_service.get_embedding(query)
 
         chunks = []
         entities = []
@@ -402,7 +399,7 @@ class MemoryManager:
         # Search shortterm memory
         # Search shortterm memory
         try:
-            st_chunks = await self.shortterm_repo.hybrid_search_chunks(
+            st_chunks = await self.shortterm_repo.hybrid_search(
                 external_id=external_id,
                 query_text=query,
                 query_embedding=query_embedding,
@@ -437,7 +434,7 @@ class MemoryManager:
 
         # Search longterm memory
         try:
-            lt_chunks = await self.longterm_repo.hybrid_search_chunks(
+            lt_chunks = await self.longterm_repo.hybrid_search(
                 external_id=external_id,
                 query_text=query,
                 query_embedding=query_embedding,
@@ -868,7 +865,7 @@ class MemoryManager:
                 )
 
                 active_confidence = (
-                    active_rel.importance if hasattr(active_rel, "confidence") else 0.5
+                    active_rel.importance if hasattr(active_rel, "importance") else 0.5
                 )
                 active_description = (
                     active_rel.description if hasattr(active_rel, "description") else ""
@@ -1563,7 +1560,7 @@ class MemoryManager:
         Calculate importance score for entity promotion.
 
         Factors considered:
-        - Entity confidence
+        - Entity importance
         - Entity type (some types are more important)
 
         Args:
@@ -1572,8 +1569,8 @@ class MemoryManager:
         Returns:
             Importance score (0.0-1.0)
         """
-        # Start with entity confidence
-        base_score = getattr(entity, "confidence", 0.5)
+        # Start with entity importance
+        base_score = getattr(entity, "importance", 0.5)
 
         # Get entity type
         entity_type = getattr(entity, "type", None)

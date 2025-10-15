@@ -27,9 +27,19 @@ class TestActiveMemoryRepository:
             1,  # id
             "test-123",  # external_id
             "Test Memory",  # title
-            "# Template",  # template_content
-            json.dumps({"summary": {"content": "Test", "update_count": 0}}),  # sections
-            json.dumps({"key": "value"}),  # metadata
+            {
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [{"id": "summary", "description": "Summary section"}]
+            },  # template_content (PSQLPy auto-parses JSON to dict)
+            {
+                "summary": {
+                    "content": "Test", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },  # sections (PSQLPy auto-parses JSON to dict)
+            {},  # metadata (PSQLPy auto-parses JSON to dict)
             datetime.now(timezone.utc),  # created_at
             datetime.now(timezone.utc),  # updated_at
         )
@@ -45,8 +55,18 @@ class TestActiveMemoryRepository:
         result = await repo.create(
             external_id="test-123",
             title="Test Memory",
-            template_content="# Template",
-            sections={"summary": {"content": "Test", "update_count": 0}},
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [{"id": "summary", "description": "Summary section"}]
+            },
+            initial_sections={
+                "summary": {
+                    "content": "Test", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },
             metadata={"key": "value"},
         )
 
@@ -66,9 +86,19 @@ class TestActiveMemoryRepository:
             1,
             "test-123",
             "Test Memory",
-            "# Template",
-            json.dumps({"summary": {"content": "Test", "update_count": 0}}),
-            json.dumps({}),
+            {
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [{"id": "summary", "description": "Summary section"}]
+            },
+            {
+                "summary": {
+                    "content": "Test", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },
+            {},
             datetime.now(timezone.utc),
             datetime.now(timezone.utc),
         )
@@ -116,9 +146,19 @@ class TestActiveMemoryRepository:
                 1,
                 "test-123",
                 "Memory 1",
-                "# Template",
-                json.dumps({"summary": {"content": "Test 1", "update_count": 0}}),
-                json.dumps({}),
+                {
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                {
+                    "summary": {
+                        "content": "Test 1", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
+                {},
                 datetime.now(timezone.utc),
                 datetime.now(timezone.utc),
             ),
@@ -126,9 +166,19 @@ class TestActiveMemoryRepository:
                 2,
                 "test-123",
                 "Memory 2",
-                "# Template",
-                json.dumps({"summary": {"content": "Test 2", "update_count": 0}}),
-                json.dumps({}),
+                {
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                {
+                    "summary": {
+                        "content": "Test 2", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
+                {},
                 datetime.now(timezone.utc),
                 datetime.now(timezone.utc),
             ),
@@ -148,48 +198,73 @@ class TestActiveMemoryRepository:
         assert all(m.external_id == "test-123" for m in results)
 
     @pytest.mark.asyncio
-    async def test_update_section(self, test_config):
-        """Test updating a section."""
+    async def test_upsert_sections(self, test_config):
+        """Test upserting sections."""
         mock_pg = MagicMock()
         mock_conn = MagicMock()
         mock_result = MagicMock()
 
-        # First call: get_by_id - PSQLPy auto-parses JSON to dict
-        get_row = (
+        # Mock return data
+        row_data = (
             1,
             "test-123",
             "Test Memory",
-            "# Template",
-            {"summary": {"content": "Old", "update_count": 0}},  # Already a dict
-            {},
+            {
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "summary", "description": "Summary section"},
+                    {"id": "notes", "description": "Notes section"}
+                ]
+            },  # PSQLPy auto-parses JSON to dict
+            {
+                "summary": {
+                    "content": "Updated summary", 
+                    "update_count": 1,
+                    "awake_update_count": 1,
+                    "last_updated": None
+                },
+                "notes": {
+                    "content": "New notes content", 
+                    "update_count": 1,
+                    "awake_update_count": 1,
+                    "last_updated": None
+                }
+            },  # PSQLPy auto-parses JSON to dict
+            {},  # PSQLPy auto-parses JSON to dict
             datetime.now(timezone.utc),
             datetime.now(timezone.utc),
         )
 
-        # Second call: update
-        update_row = (
-            1,
-            "test-123",
-            "Test Memory",
-            "# Template",
-            {"summary": {"content": "Updated", "update_count": 1}},  # Already a dict
-            {},
-            datetime.now(timezone.utc),
-            datetime.now(timezone.utc),
-        )
-
-        mock_result.result.side_effect = [[get_row], [update_row]]
+        mock_result.result.return_value = [row_data]
         mock_conn.execute = AsyncMock(return_value=mock_result)
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn.__aexit__ = AsyncMock(return_value=None)
         mock_pg.connection.return_value = mock_conn
 
         repo = ActiveMemoryRepository(mock_pg)
-        result = await repo.update_section(memory_id=1, section_id="summary", new_content="Updated")
+        result = await repo.upsert_sections(
+            memory_id=1,
+            section_updates=[
+                {
+                    "section_id": "summary",
+                    "new_content": "Updated summary",
+                    "action": "replace",
+                    "old_content": "Old summary"
+                },
+                {
+                    "section_id": "notes",
+                    "new_content": "New notes content",
+                    "action": "insert"
+                }
+            ]
+        )
 
         assert isinstance(result, ActiveMemory)
-        assert result.sections["summary"]["content"] == "Updated"
+        assert result.sections["summary"]["content"] == "Updated summary"
         assert result.sections["summary"]["update_count"] == 1
+        assert result.sections["summary"]["awake_update_count"] == 1
+        assert "notes" in result.sections
+        assert result.sections["notes"]["content"] == "New notes content"
 
     @pytest.mark.asyncio
     async def test_delete(self, test_config):
@@ -222,9 +297,19 @@ class TestActiveMemoryRepository:
             1,
             "test-123",
             "Test Memory",
-            "# Template",
-            {"summary": {"content": "Test", "update_count": 5}},  # Already a dict
-            {},  # Already a dict
+            {
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [{"id": "summary", "description": "Summary section"}]
+            },
+            {
+                "summary": {
+                    "content": "Test", 
+                    "update_count": 5,
+                    "awake_update_count": 5,
+                    "last_updated": None
+                }
+            },
+            {},
             datetime.now(timezone.utc),
             datetime.now(timezone.utc),
         )
@@ -242,6 +327,58 @@ class TestActiveMemoryRepository:
         assert isinstance(results[0], dict)
         assert "memory_id" in results[0]
         assert results[0]["update_count"] >= 3
+
+    @pytest.mark.asyncio
+    async def test_reset_all_update_counts(self, test_config):
+        """Test resetting all update counts in a memory."""
+        mock_pg = MagicMock()
+        mock_conn = MagicMock()
+        mock_result = MagicMock()
+
+        # Mock get_by_id first call
+        get_row = (
+            1,
+            "test-123",
+            "Test Memory",
+            {
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "summary", "description": "Summary section"},
+                    {"id": "notes", "description": "Notes section"}
+                ]
+            },
+            {
+                "summary": {
+                    "content": "Summary content", 
+                    "update_count": 5,
+                    "awake_update_count": 10,
+                    "last_updated": None
+                },
+                "notes": {
+                    "content": "Notes content", 
+                    "update_count": 3,
+                    "awake_update_count": 7,
+                    "last_updated": None
+                }
+            },
+            {},
+            datetime.now(timezone.utc),
+            datetime.now(timezone.utc),
+        )
+
+        # Mock update result
+        mock_result.result.side_effect = [[get_row], []]
+        mock_conn.execute = AsyncMock(return_value=mock_result)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+        mock_pg.connection.return_value = mock_conn
+
+        repo = ActiveMemoryRepository(mock_pg)
+        result = await repo.reset_all_update_counts(memory_id=1)
+
+        assert result is True
+        # Should have called execute twice: once for get_by_id, once for update
+        assert mock_conn.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_create_with_validation_error(self, test_config):

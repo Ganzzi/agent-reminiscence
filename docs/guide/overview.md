@@ -20,8 +20,34 @@ await agent_mem.create_active_memory(external_id="agent-3", ...)
 
 ### Template-Driven Memory
 
-Active memories use YAML templates to define their structure. Each template specifies sections that organize information:
+Active memories use JSON or YAML templates to define their structure. Each template specifies sections with default content:
 
+**JSON Format (Preferred):**
+```json
+{
+  "template": {
+    "id": "task_memory_v1",
+    "name": "Task Memory",
+    "version": "1.0.0"
+  },
+  "sections": [
+    {
+      "id": "current_task",
+      "description": "What is being worked on now"
+    },
+    {
+      "id": "progress",
+      "description": "Steps completed"
+    },
+    {
+      "id": "blockers",
+      "description": "Issues preventing progress"
+    }
+  ]
+}
+```
+
+**YAML Format (Backward Compatible):**
 ```yaml
 template:
   id: "task_memory_v1"
@@ -39,19 +65,28 @@ sections:
     description: "Issues preventing progress"
 ```
 
+### Section Structure
+
+Each section in active memory contains:
+- `content`: Markdown content
+- `update_count`: Updates since last consolidation (resets to 0)
+- `awake_update_count`: Total updates ever (never resets)
+- `last_updated`: ISO timestamp of last update
+
 ### Section-Level Updates
 
-Each section in an active memory tracks its own `update_count`. When a section reaches the update threshold, it triggers automatic consolidation to shortterm memory.
+Each section tracks dual counters for updates:
 
 ```python
-# Update a section (auto-increments update_count)
+# Update a section (increments both counters)
 await agent_mem.update_active_memory_section(
     external_id="agent-123",
     memory_id=1,
     section_id="progress",
     new_content="New progress info"
 )
-# If update_count >= threshold, consolidates to shortterm automatically
+# update_count: used for consolidation trigger
+# awake_update_count: permanent history (for future sleep/wake features)
 ```
 
 ## The Four Core Methods
@@ -66,9 +101,14 @@ Create a new template-driven working memory:
 memory = await agent_mem.create_active_memory(
     external_id="agent-123",
     title="Build Dashboard",
-    template_content=TEMPLATE_YAML,
+    template_content=TEMPLATE_YAML,  # Can be dict or YAML string
     initial_sections={
-        "current_task": {"content": "...", "update_count": 0}
+        "current_task": {
+            "content": "...",
+            "update_count": 0,
+            "awake_update_count": 0,
+            "last_updated": None
+        }
     },
     metadata={"priority": "high"}
 )

@@ -25,18 +25,26 @@ CREATE TABLE IF NOT EXISTS active_memory (
     id SERIAL PRIMARY KEY,
     external_id VARCHAR(255) NOT NULL, -- Generic agent identifier (UUID, string, int)
     title VARCHAR(500) NOT NULL,
-    template_content TEXT NOT NULL, -- YAML template defining structure
-    sections JSONB DEFAULT '{}', -- {section_id: {content: str, update_count: int}}
+    template_content JSONB NOT NULL, -- Changed from TEXT to JSONB
+    sections JSONB DEFAULT '{}', -- Updated structure with new fields
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Comment updates
+COMMENT ON COLUMN active_memory.template_content IS 'JSONB template with structure: {template: {id, name}, sections: [{id, description}]}';
+
+COMMENT ON COLUMN active_memory.sections IS 'JSONB sections map: {section_id: {content, update_count, awake_update_count, last_updated}}';
 
 -- Index for querying by external_id (primary access pattern)
 CREATE INDEX IF NOT EXISTS idx_active_memory_external_id ON active_memory (external_id);
 
 -- Index for JSONB sections
 CREATE INDEX IF NOT EXISTS idx_active_memory_sections ON active_memory USING gin (sections);
+
+-- Add index for template_content JSONB queries
+CREATE INDEX IF NOT EXISTS idx_active_memory_template ON active_memory USING gin (template_content);
 
 -- JSONB index for metadata queries
 CREATE INDEX IF NOT EXISTS idx_active_memory_metadata ON active_memory USING gin (metadata);

@@ -204,18 +204,23 @@ class MemoryService:
         Returns:
             Dictionary with formatted data
         """
-        # Parse template_content to extract template info
-        import yaml
-
-        template_data = {}
-        try:
-            template_data = yaml.safe_load(memory.template_content)
-        except Exception:
-            template_data = {}
+        # Parse template_content as dict (new JSON format)
+        template_data = memory.template_content if isinstance(memory.template_content, dict) else {}
 
         template_info = template_data.get("template", {})
         template_id = template_info.get("id", "unknown")
         template_name = template_info.get("name", "Unknown Template")
+
+        # Format sections with new fields
+        formatted_sections = {}
+        if memory.sections:
+            for section_id, section_data in memory.sections.items():
+                formatted_sections[section_id] = {
+                    "content": section_data.get("content", ""),
+                    "update_count": section_data.get("update_count", 0),
+                    "awake_update_count": section_data.get("awake_update_count", 0),
+                    "last_updated": section_data.get("last_updated"),
+                }
 
         return {
             "id": memory.id,
@@ -224,7 +229,7 @@ class MemoryService:
             "template_name": template_name,
             "created_at": memory.created_at,
             "updated_at": memory.updated_at,
-            "sections": memory.sections,
+            "sections": formatted_sections,
             "metadata": memory.metadata,
             "section_count": len(memory.sections) if memory.sections else 0,
         }

@@ -856,7 +856,7 @@ async def retrieve_memory(
     # Format active templates as context
     template_context = "\n\n".join(
         [
-            f"## Active Memory: {tmpl['title']}\n```\n{tmpl['template_content'][:300]}...\n```"
+            f"## Active Memory: {tmpl['title'] if isinstance(tmpl, dict) else tmpl.title}\n```\n{str(tmpl['template_content']) if isinstance(tmpl, dict) else str(tmpl.template_content)}\n```"
             for tmpl in active_templates
         ]
     )

@@ -247,13 +247,15 @@ if creation_mode == "pre-built":
                         # Create active memory using API
                         with st.spinner("Creating memory..."):
                             try:
-                                # Prepare initial sections
+                                # Prepare initial sections with new structure
                                 initial_sections = {}
                                 for section_id, content in section_contents.items():
                                     if content and content.strip():
                                         initial_sections[section_id] = {
                                             "content": content,
                                             "update_count": 0,
+                                            "awake_update_count": 0,
+                                            "last_updated": None,
                                         }
 
                                 # Parse metadata
@@ -267,14 +269,12 @@ if creation_mode == "pre-built":
                                     st.error(f"❌ Invalid metadata YAML: {str(e)}")
                                     st.stop()
 
-                                # Call API (async)
-                                # Convert template dict to YAML string for the core API
-                                template_yaml = yaml.dump(selected_template)
+                                # Call API (async) - pass dict directly (new format)
                                 memory = asyncio.run(
                                     memory_service.create_active_memory(
                                         external_id=external_id,
                                         title=memory_title,
-                                        template_content=template_yaml,
+                                        template_content=selected_template,  # Pass dict directly
                                         initial_sections=initial_sections,
                                         metadata=metadata,
                                     )
@@ -402,14 +402,12 @@ sections:
                             # Create active memory using API
                             with st.spinner("Creating memory..."):
                                 try:
-                                    # Call API (async)
-                                    # Convert parsed dict to YAML string for the core API
-                                    template_yaml = yaml.dump(parsed)
+                                    # Call API (async) - pass dict directly (new format)
                                     memory = asyncio.run(
                                         memory_service.create_active_memory(
                                             external_id=external_id,
                                             title=memory_title,
-                                            template_content=template_yaml,
+                                            template_content=parsed,  # Pass dict directly
                                             initial_sections=None,  # Custom YAML - no initial sections
                                             metadata=parsed.get("metadata", {}),
                                         )

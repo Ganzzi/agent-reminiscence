@@ -107,67 +107,91 @@ class AgentMem:
         self,
         external_id: str | UUID | int,
         title: str,
-        template_content: str,
+        template_content: str | Dict[str, Any],  # Support both
         initial_sections: Optional[Dict[str, Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ActiveMemory:
         """
-                Create a new active memory with template-driven structure.
-
-                Active memories represent the agent's working memory - current tasks,
-                recent decisions, and ongoing work context.
-
-                Args:
-                    external_id: Unique identifier for the agent (UUID, string, or int)
-                    title: Memory title
-                    template_content: YAML template defining section structure
-                    initial_sections: Optional initial sections {section_id: {content: str, update_count: int}}
-                    metadata: Optional metadata dictionary
-
-                Returns:
-                    Created ActiveMemory object
-
-                Raises:
-                    RuntimeError: If not initialized
-
-                Example:
-                    ```python
-                    memory = await agent_mem.create_active_memory(
-                        external_id="agent-123",
-                        title="Task Memory",
-                        template_content='''
-        template:
-          id: "task_memory_v1"
-          name: "Task Memory"
-        sections:
-          - id: "current_task"
-            title: "Current Task"
-          - id: "progress"
-            title: "Progress"
-        ''',
-                        initial_sections={
-                            "current_task": {"content": "# Task\nImplement feature", "update_count": 0},
-                            "progress": {"content": "# Progress\n- Started", "update_count": 0}
-                        },
-                        metadata={"priority": "high"}
-                    )
-                    ```
+        Create a new active memory with template-driven structure.
+        
+        Args:
+            external_id: Unique identifier for the agent (UUID, string, or int)
+            title: Memory title
+            template_content: Template defining section structure. Can be:
+                - Dict (JSON): {"template": {...}, "sections": [...]}
+                - Str (YAML): Parsed to dict automatically
+            initial_sections: Optional initial sections that override template defaults
+                {"section_id": {"content": "...", "update_count": 0, ...}}
+            metadata: Optional metadata dictionary
+        
+        Returns:
+            Created ActiveMemory object
+        
+        Example (JSON):
+            ```python
+            memory = await agent_mem.create_active_memory(
+                external_id="agent-123",
+                title="Task Memory",
+                template_content={
+                    "template": {
+                        "id": "task_memory_v1",
+                        "name": "Task Memory"
+                    },
+                    "sections": [
+                        {
+                            "id": "current_task",
+                            "description": "What is being worked on now"
+                        }
+                    ]
+                },
+                initial_sections={
+                    "current_task": {"content": "# Task\nImplement feature"}
+                }
+            )
+            ```
+        
+        Example (YAML - backward compatible):
+            ```python
+            memory = await agent_mem.create_active_memory(
+                external_id="agent-123",
+                title="Task Memory",
+                template_content='''
+template:
+  id: "task_memory_v1"
+  name: "Task Memory"
+sections:
+  - id: "current_task"
+    title: "Current Task"
+''',
+                initial_sections={"current_task": {"content": "..."}}
+            )
+            ```
         """
         self._ensure_initialized()
-
+        
         # Validate inputs
         if not title or not title.strip():
             raise ValueError("title cannot be empty")
-        if not template_content or not template_content.strip():
+        if not template_content:
             raise ValueError("template_content cannot be empty")
-
+        
         external_id_str = str(external_id)
-
+        
+        # Parse template if string (YAML)
+        if isinstance(template_content, str):
+            import yaml
+            try:
+                template_dict = yaml.safe_load(template_content)
+            except yaml.YAMLError as e:
+                raise ValueError(f"Invalid YAML template: {e}")
+        else:
+            template_dict = template_content
+        
         logger.info(f"Creating active memory for {external_id_str}: {title}")
         return await self._memory_manager.create_active_memory(
             external_id=external_id_str,
             title=title,
-            template_content=template_content,
+            template_content=template_dict,
             initial_sections=initial_sections or {},
             metadata=metadata or {},
         )
@@ -207,44 +231,107 @@ class AgentMem:
         self,
         external_id: str | UUID | int,
         memory_id: int,
-        sections: List[Dict[str, str]],
+        sections: List[Dict[str, Any]],
     ) -> ActiveMemory:
         """
-        Update multiple sections in an active memory (batch update).
-
-        After updating all sections, checks if total update count across all sections
-        exceeds threshold for consolidation. Consolidation runs in background if triggered.
-
+        Upsert multiple sections in an active memory (batch operation).
+        
+        Supports:
+        - Creating new sections (automatically added to template)
+        - Updating existing sections
+        - Content replacement with pattern matching
+        - Content insertion/appending
+        
         Args:
             external_id: Unique identifier for the agent
             memory_id: ID of the memory to update
-            sections: List of section updates, each dict with 'section_id' and 'new_content'
-                     Example: [{"section_id": "progress", "new_content": "..."}, ...]
-
+            sections: List of section updates:
+                [
+                    {
+                        "section_id": "progress",
+                        "old_content": "# Old header",  # Optional: pattern to find
+                        "new_content": "# New content",
+                        "action": "replace"  # "replace" or "insert", default "replace"
+                    }
+                ]
+        
         Returns:
             Updated ActiveMemory object
-
-        Raises:
-            RuntimeError: If not initialized
-            ValueError: If memory not found or sections invalid
-
-        Example:
+        
+        Action Behaviors:
+            **replace**:
+            - If old_content is null/empty: Replaces entire section content
+            - If old_content is provided: Replaces that substring with new_content
+            
+            **insert**:
+            - If old_content is null/empty: Appends new_content at end
+            - If old_content is provided: Inserts new_content right after old_content
+            
+            **New Section** (section doesn't exist):
+            - Creates section with new_content
+            - Adds section definition to template_content
+        
+        Examples:
             ```python
-            memory = await agent_mem.update_active_memory_sections(
+            # Replace entire section
+            await agent_mem.update_active_memory_sections(
                 external_id="agent-123",
                 memory_id=1,
                 sections=[
-                    {"section_id": "progress", "new_content": "Updated progress..."},
-                    {"section_id": "notes", "new_content": "New notes..."}
+                    {
+                        "section_id": "progress",
+                        "new_content": "# Progress\n- All done!",
+                        "action": "replace"
+                    }
+                ]
+            )
+            
+            # Replace specific part
+            await agent_mem.update_active_memory_sections(
+                external_id="agent-123",
+                memory_id=1,
+                sections=[
+                    {
+                        "section_id": "progress",
+                        "old_content": "- Step 1: In progress",
+                        "new_content": "- Step 1: Complete",
+                        "action": "replace"
+                    }
+                ]
+            )
+            
+            # Append new content
+            await agent_mem.update_active_memory_sections(
+                external_id="agent-123",
+                memory_id=1,
+                sections=[
+                    {
+                        "section_id": "progress",
+                        "new_content": "\n- Step 4: Started",
+                        "action": "insert"
+                    }
+                ]
+            )
+            
+            # Insert new section
+            await agent_mem.update_active_memory_sections(
+                external_id="agent-123",
+                memory_id=1,
+                sections=[
+                    {
+                        "section_id": "new_section",
+                        "new_content": "# New Section\nContent...",
+                        "action": "replace"
+                    }
                 ]
             )
             ```
         """
         self._ensure_initialized()
         external_id_str = str(external_id)
-
+        
         logger.info(
-            f"Updating {len(sections)} sections in memory {memory_id} for {external_id_str}"
+            f"Upserting {len(sections)} sections in memory {memory_id} for {external_id_str}"
         )
         return await self._memory_manager.update_active_memory_sections(
             external_id=external_id_str,

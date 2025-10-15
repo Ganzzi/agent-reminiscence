@@ -21,6 +21,8 @@ from .schemas import (
     GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
     UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
     SEARCH_MEMORIES_INPUT_SCHEMA,
+    CREATE_ACTIVE_MEMORY_INPUT_SCHEMA,
+    DELETE_ACTIVE_MEMORY_INPUT_SCHEMA,
 )
 
 logging.basicConfig(
@@ -86,14 +88,44 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema=GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
         ),
         types.Tool(
+            name="create_active_memory",
+            description=(
+                "Create a new active memory (working memory) for an agent with a template-driven structure.\n\n"
+                "Active memories store the agent's current work context organized into sections (e.g., 'current_task', "
+                "'progress', 'notes'). The template_content defines WHAT sections exist and their PURPOSE, while "
+                "initial_sections optionally sets their initial content VALUES.\n\n"
+                "Required parameters:\n"
+                "- external_id: Agent identifier\n"
+                "- title: Memory title (e.g., 'Task Memory', 'Project Context')\n"
+                "- template_content: JSON object defining the memory structure with TWO required keys:\n"
+                "  * 'template': {id: 'template_id', name: 'Template Name'}\n"
+                "  * 'sections': [{id: 'section_id', description: 'Purpose of this section'}, ...]\n\n"
+                "Optional parameters:\n"
+                "- initial_sections: Set initial content for sections: {section_id: {content: '...', update_count: 0}}\n"
+                "- metadata: Additional metadata for the memory\n\n"
+                "Example template_content:\n"
+                "{\n"
+                '  "template": {"id": "task_memory_v1", "name": "Task Memory"},\n'
+                '  "sections": [\n'
+                '    {"id": "current_task", "description": "What is being worked on now"},\n'
+                '    {"id": "progress", "description": "Status and completion tracking"}\n'
+                "  ]\n"
+                "}"
+            ),
+            inputSchema=CREATE_ACTIVE_MEMORY_INPUT_SCHEMA,
+        ),
+        types.Tool(
             name="update_memory_sections",
             description=(
-                "Update multiple sections in an active memory at once (batch update). "
-                "This efficiently updates multiple sections in a single call, with all sections "
-                "having their update_counts incremented atomically. More efficient than multiple "
-                "single-section updates when you need to update several sections together."
+                "Upsert (insert or update) multiple sections in an active memory. "
+                "Supports creating new sections, replacing content, and inserting content."
             ),
             inputSchema=UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
+        ),
+        types.Tool(
+            name="delete_active_memory",
+            description="Delete an active memory for an agent",
+            inputSchema=DELETE_ACTIVE_MEMORY_INPUT_SCHEMA,
         ),
         types.Tool(
             name="search_memories",
@@ -135,8 +167,16 @@ async def handle_call_tool(
             result = await _handle_get_active_memories(agent_mem, arguments)
             logger.info(f"Successfully executed {name}")
             return result
+        elif name == "create_active_memory":
+            result = await _handle_create_active_memory(agent_mem, arguments)
+            logger.info(f"Successfully executed {name}")
+            return result
         elif name == "update_memory_sections":
             result = await _handle_update_memory_sections(agent_mem, arguments)
+            logger.info(f"Successfully executed {name}")
+            return result
+        elif name == "delete_active_memory":
+            result = await _handle_delete_active_memory(agent_mem, arguments)
             logger.info(f"Successfully executed {name}")
             return result
         elif name == "search_memories":
@@ -218,26 +258,23 @@ async def _handle_update_memory_sections(
     if not current_memory:
         raise ValueError(f"Memory {memory_id} not found for agent {external_id}")
 
-    # Validate all sections exist and content is not empty
+    # Validate section updates (sections can now be created if they don't exist)
     for section_update in sections:
         section_id = section_update["section_id"]
         new_content = section_update["new_content"]
-
-        if section_id not in current_memory.sections:
-            available_sections = ", ".join(current_memory.sections.keys())
-            raise ValueError(
-                f"Section '{section_id}' not found in memory. "
-                f"Available sections: {available_sections}"
-            )
 
         if not new_content or not new_content.strip():
             raise ValueError(f"new_content for section '{section_id}' cannot be empty")
 
     # Track previous counts for response
     previous_counts = {}
+    previous_awake_counts = {}
     for section_update in sections:
         section_id = section_update["section_id"]
         previous_counts[section_id] = current_memory.sections[section_id].get("update_count", 0)
+        previous_awake_counts[section_id] = current_memory.sections[section_id].get(
+            "awake_update_count", 0
+        )
 
     # Use NEW batch update method (single call)
     updated_memory = await agent_mem.update_active_memory_sections(
@@ -251,11 +288,14 @@ async def _handle_update_memory_sections(
     for section_update in sections:
         section_id = section_update["section_id"]
         new_count = updated_memory.sections[section_id].get("update_count", 0)
+        new_awake_count = updated_memory.sections[section_id].get("awake_update_count", 0)
         section_updates.append(
             {
                 "section_id": section_id,
                 "previous_count": previous_counts[section_id],
                 "new_count": new_count,
+                "previous_awake_count": previous_awake_counts[section_id],
+                "new_awake_count": new_awake_count,
             }
         )
 
@@ -373,3 +413,302 @@ async def _handle_search_memories(
     import json
 
     return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+
+
+async def _handle_create_active_memory(
+    agent_mem: AgentMem, arguments: dict[str, Any]
+) -> list[types.TextContent]:
+    """Handle create_active_memory tool call."""
+    external_id = arguments["external_id"]
+    title = arguments["title"]
+    template_content = arguments["template_content"]
+    initial_sections = arguments.get("initial_sections", {})
+    metadata = arguments.get("metadata", {})
+
+    # Validate inputs with clear error messages
+    if not external_id or not external_id.strip():
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": "Validation Error: 'external_id' cannot be empty"}, indent=2
+                ),
+            )
+        ]
+
+    if not title or not title.strip():
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps({"error": "Validation Error: 'title' cannot be empty"}, indent=2),
+            )
+        ]
+
+    # Validate template_content structure with detailed error messages
+    if not isinstance(template_content, dict):
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content' must be a JSON object (dictionary), not a string or other type",
+                        "example": {
+                            "template": {"id": "my_template", "name": "My Template"},
+                            "sections": [{"id": "section1", "description": "Purpose of section 1"}],
+                        },
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    if not template_content:
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content' cannot be empty",
+                        "required_structure": {
+                            "template": {"id": "...", "name": "..."},
+                            "sections": [{"id": "...", "description": "..."}],
+                        },
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    if "template" not in template_content:
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content' must have a 'template' key",
+                        "received": template_content,
+                        "required_structure": {
+                            "template": {"id": "template_identifier", "name": "Template Name"},
+                            "sections": [{"id": "section_id", "description": "Section purpose"}],
+                        },
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    if "sections" not in template_content:
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content' must have a 'sections' key",
+                        "received": template_content,
+                        "required_structure": {
+                            "template": {"id": "template_identifier", "name": "Template Name"},
+                            "sections": [{"id": "section_id", "description": "Section purpose"}],
+                        },
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    # Validate template object
+    if not isinstance(template_content.get("template"), dict):
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content.template' must be an object",
+                        "required_fields": {"id": "string", "name": "string"},
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    template_obj = template_content["template"]
+    if "id" not in template_obj or "name" not in template_obj:
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content.template' must have 'id' and 'name' fields",
+                        "received": template_obj,
+                        "example": {"id": "task_memory_v1", "name": "Task Memory Template"},
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    # Validate sections array
+    if not isinstance(template_content.get("sections"), list):
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content.sections' must be an array",
+                        "example": [
+                            {"id": "current_task", "description": "What is being worked on now"},
+                            {"id": "progress", "description": "Status and completion tracking"},
+                        ],
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    sections = template_content["sections"]
+    if len(sections) == 0:
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Validation Error: 'template_content.sections' must have at least one section",
+                        "example": [{"id": "main_section", "description": "Main content area"}],
+                    },
+                    indent=2,
+                ),
+            )
+        ]
+
+    # Validate each section
+    for i, section in enumerate(sections):
+        if not isinstance(section, dict):
+            return [
+                types.TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "error": f"Validation Error: Section at index {i} must be an object",
+                            "received": section,
+                            "required_fields": {"id": "string", "description": "string"},
+                        },
+                        indent=2,
+                    ),
+                )
+            ]
+
+        if "id" not in section or "description" not in section:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "error": f"Validation Error: Section at index {i} must have 'id' and 'description' fields",
+                            "received": section,
+                            "example": {
+                                "id": "section_name",
+                                "description": "Purpose of this section",
+                            },
+                        },
+                        indent=2,
+                    ),
+                )
+            ]
+
+        if not section["id"] or not str(section["id"]).strip():
+            return [
+                types.TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {"error": f"Validation Error: Section at index {i} has empty 'id' field"},
+                        indent=2,
+                    ),
+                )
+            ]
+
+    # Create memory
+    try:
+        memory = await agent_mem.create_active_memory(
+            external_id=external_id,
+            title=title,
+            template_content=template_content,
+            initial_sections=initial_sections,
+            metadata=metadata,
+        )
+
+        # Format response
+        response = {
+            "success": True,
+            "memory": {
+                "id": memory.id,
+                "external_id": memory.external_id,
+                "title": memory.title,
+                "template": memory.template_content.get("template", {}),
+                "sections": memory.sections,
+                "metadata": memory.metadata,
+                "created_at": memory.created_at.isoformat(),
+                "updated_at": memory.updated_at.isoformat(),
+            },
+            "message": f"Successfully created memory with {len(memory.sections)} sections",
+        }
+
+        logger.info(
+            f"Created memory {memory.id} for {external_id} with {len(memory.sections)} sections"
+        )
+
+        return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+
+    except Exception as e:
+        logger.error(f"Error creating memory: {e}", exc_info=True)
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps({"error": f"Failed to create memory: {str(e)}"}, indent=2),
+            )
+        ]
+
+
+async def _handle_delete_active_memory(
+    agent_mem: AgentMem, arguments: dict[str, Any]
+) -> list[types.TextContent]:
+    """Handle delete_active_memory tool call."""
+    external_id = arguments["external_id"]
+    memory_id = arguments["memory_id"]
+
+    # Validate inputs
+    if not external_id or not external_id.strip():
+        return [
+            types.TextContent(
+                type="text", text=json.dumps({"error": "external_id cannot be empty"}, indent=2)
+            )
+        ]
+
+    # Delete memory
+    try:
+        success = await agent_mem.delete_active_memory(
+            external_id=external_id,
+            memory_id=memory_id,
+        )
+
+        if success:
+            response = {
+                "success": True,
+                "message": f"Successfully deleted memory {memory_id}",
+            }
+            logger.info(f"Deleted memory {memory_id} for {external_id}")
+        else:
+            response = {
+                "success": False,
+                "error": f"Memory {memory_id} not found or does not belong to agent {external_id}",
+            }
+            logger.warning(f"Failed to delete memory {memory_id} for {external_id}")
+
+        return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+
+    except Exception as e:
+        logger.error(f"Error deleting memory: {e}", exc_info=True)
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps({"error": f"Failed to delete memory: {str(e)}"}, indent=2),
+            )
+        ]

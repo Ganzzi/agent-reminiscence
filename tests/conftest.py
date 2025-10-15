@@ -203,8 +203,8 @@ def mock_embedding_service() -> MagicMock:
     """Create a mock EmbeddingService."""
     mock = MagicMock(spec=EmbeddingService)
     # Return a 768-dimensional zero vector (typical embedding size)
-    mock.generate_embedding = AsyncMock(return_value=[0.0] * 768)
-    mock.generate_embeddings = AsyncMock(return_value=[[0.0] * 768])
+    mock.get_embedding = AsyncMock(return_value=[0.0] * 768)
+    mock.get_embeddings_batch = AsyncMock(return_value=[[0.0] * 768])
     return mock
 
 

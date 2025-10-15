@@ -41,9 +41,9 @@ class ActiveMemoryRepository:
                 id=row["id"],
                 external_id=row["external_id"],
                 title=row["title"],
-                template_content=row["template_content"],
-                sections=row["sections"] if isinstance(row["sections"], dict) else {},
-                metadata=row["metadata"] if isinstance(row["metadata"], dict) else {},
+                template_content=row["template_content"] if isinstance(row["template_content"], dict) else json.loads(row["template_content"]),
+                sections=row["sections"] if isinstance(row["sections"], dict) else json.loads(row["sections"]),
+                metadata=row["metadata"] if isinstance(row["metadata"], dict) else json.loads(row["metadata"]),
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
             )
@@ -53,9 +53,9 @@ class ActiveMemoryRepository:
                 id=row[0],
                 external_id=row[1],
                 title=row[2],
-                template_content=row[3],
-                sections=row[4] if isinstance(row[4], dict) else {},
-                metadata=row[5] if isinstance(row[5], dict) else {},
+                template_content=row[3] if isinstance(row[3], dict) else json.loads(row[3]),
+                sections=row[4] if isinstance(row[4], dict) else json.loads(row[4]),
+                metadata=row[5] if isinstance(row[5], dict) else json.loads(row[5]),
                 created_at=row[6],
                 updated_at=row[7],
             )
@@ -64,61 +64,224 @@ class ActiveMemoryRepository:
         self,
         external_id: str,
         title: str,
-        template_content: str,
-        sections: Dict[str, Dict[str, Any]],
+        template_content: Dict[str, Any],  # Changed from str
+        initial_sections: Dict[str, Dict[str, Any]],
         metadata: Dict[str, Any],
     ) -> ActiveMemory:
         """
         Create a new active memory with template and sections.
-
+        
         Args:
             external_id: Agent identifier
             title: Memory title
-            template_content: YAML template content
-            sections: Initial sections {section_id: {content: str, update_count: int}}
+            template_content: JSON template with structure:
+                {
+                    "template": {"id": "...", "name": "..."},
+                    "sections": [
+                        {
+                            "id": "section_id",
+                            "description": "Default content for the section"
+                        }
+                    ]
+                }
+            initial_sections: Initial sections that override template defaults
+                {"section_id": {"content": "...", "update_count": 0, ...}}
             metadata: Metadata dictionary
-
-        Returns:
-            Created ActiveMemory object
-
-        Example:
-            memory = await repo.create(
-                external_id="agent-123",
-                title="Task Memory",
-                template_content="template:\\n  id: task_v1...",
-                sections={
-                    "current_task": {"content": "# Task\\n...", "update_count": 0},
-                    "progress": {"content": "# Progress\\n...", "update_count": 0}
-                },
-                metadata={"priority": "high"}
-            )
         """
+        from datetime import datetime, timezone
+        
+        # Extract default sections from template
+        template_sections = template_content.get("sections", [])
+        
+        # Build sections dict with defaults from template
+        sections = {}
+        for tmpl_section in template_sections:
+            section_id = tmpl_section["id"]
+            sections[section_id] = {
+                "content": tmpl_section.get("description", ""),  # description becomes default content
+                "update_count": tmpl_section.get("update_count", 0),
+                "awake_update_count": tmpl_section.get("awake_update_count", 0),
+                "last_updated": tmpl_section.get("last_updated")
+            }
+        
+        # Override with initial_sections if provided
+        for section_id, section_data in initial_sections.items():
+            if section_id in sections:
+                # Override existing defaults
+                sections[section_id].update(section_data)
+            else:
+                # Add new section (ensure all fields)
+                sections[section_id] = {
+                    "content": section_data.get("content", ""),
+                    "update_count": section_data.get("update_count", 0),
+                    "awake_update_count": section_data.get("awake_update_count", 0),
+                    "last_updated": section_data.get("last_updated")
+                }
+        
+        # Ensure last_updated is ISO string if datetime
+        for section_id, section_data in sections.items():
+            if isinstance(section_data.get("last_updated"), datetime):
+                sections[section_id]["last_updated"] = section_data["last_updated"].isoformat()
+        
         query = """
             INSERT INTO active_memory 
             (external_id, title, template_content, sections, metadata)
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
             RETURNING id, external_id, title, template_content, sections, 
                       metadata, created_at, updated_at
         """
-
+        
         async with self.postgres.connection() as conn:
             result = await conn.execute(
-                query,
+                query, 
+                [external_id, title, template_content, sections, metadata]
+            )
+            rows = result.result()
+            return self._row_to_model(rows[0])
+
+    async def upsert_sections(
+        self,
+        memory_id: int,
+        section_updates: List[Dict[str, Any]],
+    ) -> Optional[ActiveMemory]:
+        """
+        Upsert multiple sections in an active memory (batch operation).
+        
+        Supports:
+        - Inserting new sections (adds to template_content.sections)
+        - Updating existing sections
+        - Content replacement (with optional pattern matching)
+        - Content insertion/appending
+        
+        Args:
+            memory_id: Memory ID
+            section_updates: List of section updates:
                 [
-                    external_id,
-                    title,
-                    template_content,
-                    sections,  # psqlpy expects dict/list, not JSON string
-                    metadata,  # psqlpy expects dict/list, not JSON string
-                ],
+                    {
+                        "section_id": "progress",
+                        "old_content": "# Old",  # Optional: pattern to find
+                        "new_content": "# New",
+                        "action": "replace"  # "replace" or "insert"
+                    }
+                ]
+        
+        Returns:
+            Updated ActiveMemory or None if not found
+        
+        Action Behaviors:
+            - replace + no old_content: Replace entire section content
+            - replace + old_content: Replace substring matching old_content
+            - insert + no old_content: Append new_content at end
+            - insert + old_content: Insert new_content after old_content
+        """
+        from datetime import datetime, timezone
+        
+        # Get current state
+        current = await self.get_by_id(memory_id)
+        if not current:
+            logger.warning(f"Active memory {memory_id} not found")
+            return None
+        
+        updated_sections = current.sections.copy()
+        updated_template = current.template_content.copy()
+        template_sections = updated_template.get("sections", [])
+        
+        for update in section_updates:
+            section_id = update["section_id"]
+            old_content = update.get("old_content")
+            new_content = update.get("new_content", "")
+            action = update.get("action", "replace")
+            
+            # Check if section exists
+            if section_id not in updated_sections:
+                # INSERT NEW SECTION
+                logger.info(f"Inserting new section '{section_id}' in memory {memory_id}")
+                
+                # Add to sections
+                updated_sections[section_id] = {
+                    "content": new_content,
+                    "update_count": 1,
+                    "awake_update_count": 1,
+                    "last_updated": datetime.now(timezone.utc).isoformat()
+                }
+                
+                # Add to template_content.sections
+                template_sections.append({
+                    "id": section_id,
+                    "description": "Dynamically added section"
+                })
+                updated_template["sections"] = template_sections
+                
+            else:
+                # UPDATE EXISTING SECTION
+                current_content = updated_sections[section_id]["content"]
+                current_update_count = updated_sections[section_id].get("update_count", 0)
+                current_awake_count = updated_sections[section_id].get("awake_update_count", 0)
+                
+                if action == "replace":
+                    if not old_content:
+                        # Replace entire content
+                        final_content = new_content
+                    else:
+                        # Replace pattern
+                        if old_content in current_content:
+                            final_content = current_content.replace(old_content, new_content)
+                        else:
+                            logger.warning(
+                                f"Pattern '{old_content[:50]}...' not found in section '{section_id}'. "
+                                f"Replacing entire content."
+                            )
+                            final_content = new_content
+                
+                elif action == "insert":
+                    if not old_content:
+                        # Append at end
+                        final_content = current_content + "\n" + new_content
+                    else:
+                        # Insert after pattern
+                        if old_content in current_content:
+                            parts = current_content.split(old_content, 1)
+                            final_content = parts[0] + old_content + "\n" + new_content + parts[1]
+                        else:
+                            logger.warning(
+                                f"Pattern '{old_content[:50]}...' not found in section '{section_id}'. "
+                                f"Appending at end."
+                            )
+                            final_content = current_content + "\n" + new_content
+                
+                else:
+                    raise ValueError(f"Invalid action '{action}'. Must be 'replace' or 'insert'.")
+                
+                # Update section
+                updated_sections[section_id] = {
+                    "content": final_content,
+                    "update_count": current_update_count + 1,
+                    "awake_update_count": current_awake_count + 1,
+                    "last_updated": datetime.now(timezone.utc).isoformat()
+                }
+        
+        # Update database
+        query = """
+            UPDATE active_memory
+            SET sections = $1::jsonb, template_content = $2::jsonb, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+            RETURNING id, external_id, title, template_content, sections, 
+                      metadata, created_at, updated_at
+        """
+        
+        async with self.postgres.connection() as conn:
+            result = await conn.execute(
+                query, 
+                [updated_sections, updated_template, memory_id]
             )
-
-            row = result.result()[0]
-            memory = self._row_to_model(row)
-
-            logger.info(
-                f"Created active memory {memory.id} for {external_id} with {len(sections)} sections"
-            )
+            rows = result.result()
+            
+            if not rows:
+                logger.warning(f"Active memory {memory_id} not found for upsert")
+                return None
+            
+            memory = self._row_to_model(rows[0])
+            logger.info(f"Upserted {len(section_updates)} sections in memory {memory_id}")
             return memory
 
     async def get_by_id(self, memory_id: int) -> Optional[ActiveMemory]:
@@ -188,6 +351,8 @@ class ActiveMemoryRepository:
         """
         Update a specific section in an active memory.
 
+        DEPRECATED: Use upsert_sections() instead for new functionality.
+        
         Automatically increments the section's update_count.
 
         Args:
@@ -209,6 +374,13 @@ class ActiveMemoryRepository:
             )
             print(updated.sections["progress"]["update_count"])  # Incremented
         """
+        import warnings
+        warnings.warn(
+            "update_section() is deprecated. Use upsert_sections() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         # First get current state
         current = await self.get_by_id(memory_id)
         if not current:
@@ -260,6 +432,8 @@ class ActiveMemoryRepository:
         """
         Update multiple sections in an active memory (batch update).
 
+        DEPRECATED: Use upsert_sections() instead for new functionality.
+        
         All updates are done in a single transaction.
         Automatically increments update_count for each section.
 
@@ -283,6 +457,13 @@ class ActiveMemoryRepository:
                 ]
             )
         """
+        import warnings
+        warnings.warn(
+            "update_sections() is deprecated. Use upsert_sections() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         # First get current state
         current = await self.get_by_id(memory_id)
         if not current:
@@ -335,38 +516,40 @@ class ActiveMemoryRepository:
     async def reset_all_update_counts(self, memory_id: int) -> bool:
         """
         Reset update_count to 0 for all sections in a memory.
-
+        
         Called after successful consolidation to shortterm memory.
-
+        Does NOT reset awake_update_count (permanent counter).
+        
         Args:
             memory_id: Memory ID
-
+        
         Returns:
             True if successful, False if memory not found
         """
-        # Get current state
         current = await self.get_by_id(memory_id)
         if not current:
             logger.warning(f"Active memory {memory_id} not found")
             return False
-
-        # Reset all update counts
+        
+        # Reset only update_count, preserve awake_update_count and last_updated
         reset_sections = {}
         for section_id, section_data in current.sections.items():
             reset_sections[section_id] = {
                 "content": section_data.get("content", ""),
-                "update_count": 0,
+                "update_count": 0,  # RESET
+                "awake_update_count": section_data.get("awake_update_count", 0),  # PRESERVE
+                "last_updated": section_data.get("last_updated")  # PRESERVE
             }
-
+        
         query = """
             UPDATE active_memory
             SET sections = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
         """
-
+        
         async with self.postgres.connection() as conn:
             await conn.execute(query, [reset_sections, memory_id])
-            logger.info(f"Reset all section update counts for memory {memory_id}")
+            logger.info(f"Reset update_count for all sections in memory {memory_id}")
             return True
 
     async def get_sections_needing_consolidation(

@@ -40,8 +40,21 @@ class TestEndToEndWorkflow:
                 id=1,
                 external_id="test-integration",
                 title="Test Conversation",
-                template_content="conversation_template:\n  sections:\n    - summary\n    - context",
-                sections={"summary": {"content": "Initial conversation", "update_count": 0}},
+                template_content={
+                    "template": {"id": "conversation-template", "name": "Conversation Template"},
+                    "sections": [
+                        {"id": "summary", "description": "Summary section"},
+                        {"id": "context", "description": "Context section"}
+                    ]
+                },
+                sections={
+                    "summary": {
+                        "content": "Initial conversation", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -55,8 +68,21 @@ class TestEndToEndWorkflow:
                     id=memory.id,
                     external_id="test-integration",
                     title="Test Conversation",
-                    template_content="conversation_template:\n  sections:\n    - summary\n    - context",
-                    sections={"summary": {"content": f"Update {i}", "update_count": i}},
+                    template_content={
+                        "template": {"id": "conversation-template", "name": "Conversation Template"},
+                        "sections": [
+                            {"id": "summary", "description": "Summary section"},
+                            {"id": "context", "description": "Context section"}
+                        ]
+                    },
+                    sections={
+                        "summary": {
+                            "content": f"Update {i}", 
+                            "update_count": i,
+                            "awake_update_count": i,
+                            "last_updated": datetime.now(timezone.utc)
+                        }
+                    },
                     metadata={},
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
@@ -88,9 +114,20 @@ class TestEndToEndWorkflow:
                 mem = await agent_mem.create_active_memory(
                     external_id="test-integration",
                     title="Test Conversation",
-                    template_content="conversation_template:\n  sections:\n    - summary\n    - context",
+                    template_content={
+                        "template": {"id": "conversation-template", "name": "Conversation Template"},
+                        "sections": [
+                            {"id": "summary", "description": "Summary section"},
+                            {"id": "context", "description": "Context section"}
+                        ]
+                    },
                     initial_sections={
-                        "summary": {"content": "Initial conversation", "update_count": 0}
+                        "summary": {
+                            "content": "Initial conversation", 
+                            "update_count": 0,
+                            "awake_update_count": 0,
+                            "last_updated": None
+                        }
                     },
                 )
                 assert mem.id == 1
@@ -163,8 +200,18 @@ class TestConsolidationWorkflow:
                 id=2,
                 external_id="test-chunking",
                 title="Chunking Test",
-                template_content="conversation_template:\n  sections:\n    - content",
-                sections={"content": {"content": long_content, "update_count": 5}},
+                template_content={
+                    "template": {"id": "conversation-template", "name": "Conversation Template"},
+                    "sections": [{"id": "content", "description": "Content section"}]
+                },
+                sections={
+                    "content": {
+                        "content": long_content, 
+                        "update_count": 5,
+                        "awake_update_count": 5,
+                        "last_updated": datetime.now(timezone.utc)
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -178,8 +225,19 @@ class TestConsolidationWorkflow:
             async with AgentMem(config=test_config) as agent_mem:
                 mem = await agent_mem.create_active_memory(
                     external_id="test-chunking",
-                    memory_type="conversation",
-                    sections={"content": long_content},
+                    title="Chunking Test",
+                    template_content={
+                        "template": {"id": "conversation-template", "name": "Conversation Template"},
+                        "sections": [{"id": "content", "description": "Content section"}]
+                    },
+                    initial_sections={
+                        "content": {
+                            "content": long_content,
+                            "update_count": 5,
+                            "awake_update_count": 5,
+                            "last_updated": datetime.now(timezone.utc)
+                        }
+                    },
                 )
 
                 # Trigger consolidation

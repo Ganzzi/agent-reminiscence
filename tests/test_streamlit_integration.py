@@ -75,6 +75,8 @@ class TestMemoryServiceIntegration:
                 initial_sections[section["id"]] = {
                     "content": f"Test content for {section['id']}",
                     "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None,
                 }
 
         # Create memory
@@ -114,7 +116,14 @@ class TestMemoryServiceIntegration:
             external_id=external_id,
             title="Test Memory for Get",
             template_content=template,
-            initial_sections={"section1": {"content": "Test content", "update_count": 0}},
+            initial_sections={
+                "section1": {
+                    "content": "Test content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },
             metadata={},
         )
 
@@ -148,7 +157,12 @@ class TestMemoryServiceIntegration:
             title="Test Memory for Update",
             template_content=template,
             initial_sections={
-                "editable_section": {"content": "Initial content", "update_count": 0}
+                "editable_section": {
+                    "content": "Initial content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
             },
             metadata={},
         )
@@ -190,7 +204,14 @@ class TestMemoryServiceIntegration:
             external_id=external_id,
             title="Test Memory for Delete",
             template_content=template,
-            initial_sections={"section1": {"content": "Will be deleted", "update_count": 0}},
+            initial_sections={
+                "section1": {
+                    "content": "Will be deleted", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },
             metadata={},
         )
 
@@ -231,7 +252,14 @@ class TestMemoryServiceIntegration:
             external_id=external_id,
             title="Test Memory Get By ID",
             template_content=template,
-            initial_sections={"section1": {"content": "Test content", "update_count": 0}},
+            initial_sections={
+                "section1": {
+                    "content": "Test content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },
             metadata={},
         )
 
@@ -289,7 +317,14 @@ class TestMemoryServiceIntegration:
             external_id=external_id,
             title="Test Memory Format",
             template_content=template,
-            initial_sections={"section1": {"content": "Test content", "update_count": 0}},
+            initial_sections={
+                "section1": {
+                    "content": "Test content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                }
+            },
             metadata={"priority": "high"},
         )
 

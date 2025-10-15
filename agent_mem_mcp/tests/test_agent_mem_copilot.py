@@ -15,23 +15,31 @@ from agent_mem.core import AgentMem
 
 
 # Test template for copilot memory
-COPILOT_TEMPLATE = """
-template:
-  id: "copilot_session_v1"
-  name: "Copilot Session Memory"
-  version: "1.0.0"
-  description: "Template for tracking GitHub Copilot session context"
-sections:
-  - id: "current_context"
-    title: "Current Context"
-    description: "What the developer is working on"
-  - id: "code_patterns"
-    title: "Code Patterns"
-    description: "Patterns and conventions observed"
-  - id: "session_notes"
-    title: "Session Notes"
-    description: "Important notes and decisions"
-"""
+COPILOT_TEMPLATE = {
+    "template": {
+        "id": "copilot_session_v1",
+        "name": "Copilot Session Memory",
+        "version": "1.0.0",
+        "description": "Template for tracking GitHub Copilot session context"
+    },
+    "sections": [
+        {
+            "id": "current_context",
+            "title": "Current Context",
+            "description": "What the developer is working on"
+        },
+        {
+            "id": "code_patterns",
+            "title": "Code Patterns",
+            "description": "Patterns and conventions observed"
+        },
+        {
+            "id": "session_notes",
+            "title": "Session Notes",
+            "description": "Important notes and decisions"
+        }
+    ]
+}
 
 
 async def test_mcp_server():
@@ -65,14 +73,20 @@ async def test_mcp_server():
                 "current_context": {
                     "content": "# Current Context\n\nWorking on AgentMem MCP server implementation.\n\n**Current Task:**\n- Testing MCP server with agent-mem-copilot external ID\n- Implementing logging system\n- Preparing for batch section updates",
                     "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": "2024-01-01T00:00:00Z",
                 },
                 "code_patterns": {
                     "content": "# Code Patterns\n\n1. **Logging**: Using Python's logging module with both file and stderr handlers\n2. **Async/Await**: All database operations are async\n3. **Error Handling**: Try-except with detailed logging and stack traces\n4. **Type Hints**: Full type annotations for better IDE support",
                     "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": "2024-01-01T00:00:00Z",
                 },
                 "session_notes": {
                     "content": "# Session Notes\n\n- Successfully set up logging with timestamps\n- Server logs to `agent_mem_mcp/logs/` directory\n- Using `uv` for dependency management\n- All 3 Docker services running (PostgreSQL, Neo4j, Ollama)",
                     "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": "2024-01-01T00:00:00Z",
                 },
             }
 
@@ -164,8 +178,60 @@ async def test_mcp_server():
             print(f"\n      Synthesis:")
             print(f"      {result.synthesis[:200]}...")
 
+        # Test 6: Create a new memory explicitly (test create_active_memory)
+        print(f"\n7️⃣  Testing create_active_memory explicitly...")
+        new_memory_title = "Test Memory - Explicit Create"
+        
+        new_template = {
+            "template": {"id": "test_memory_v1", "name": "Test Memory"},
+            "sections": [{"id": "test_section", "description": "A test section"}]
+        }
+        
+        new_initial_sections = {
+            "test_section": {
+                "content": "# Test Section\n\nThis is a test section created via explicit create_active_memory call.",
+                "update_count": 0,
+                "awake_update_count": 0,
+                "last_updated": None
+            }
+        }
+        
+        new_memory = await agent_mem.create_active_memory(
+            external_id=external_id,
+            title=new_memory_title,
+            template_content=new_template,
+            initial_sections=new_initial_sections,
+            metadata={"test_type": "explicit_create", "created_by": "test_agent_mem_copilot.py"},
+        )
+        print(f"   ✅ Created new memory ID: {new_memory.id}")
+        print(f"      Title: {new_memory.title}")
+        print(f"      Sections: {list(new_memory.sections.keys())}")
+        new_memory_id = new_memory.id
+
+        # Test 7: Delete the newly created memory (test delete_active_memory)
+        print(f"\n8️⃣  Testing delete_active_memory...")
+        delete_success = await agent_mem.delete_active_memory(
+            external_id=external_id,
+            memory_id=new_memory_id,
+        )
+        
+        if delete_success:
+            print(f"   ✅ Successfully deleted memory {new_memory_id}")
+        else:
+            print(f"   ❌ Failed to delete memory {new_memory_id}")
+            return False
+
+        # Verify deletion
+        memories_after_delete = await agent_mem.get_active_memories(external_id)
+        deleted_memory = next((m for m in memories_after_delete if m.id == new_memory_id), None)
+        if deleted_memory:
+            print(f"   ❌ Memory {new_memory_id} still exists after deletion!")
+            return False
+        else:
+            print(f"   ✅ Confirmed memory {new_memory_id} was deleted")
+
         # Final verification
-        print(f"\n7️⃣  Final verification - Getting all memories...")
+        print(f"\n9️⃣  Final verification - Getting all memories...")
         final_memories = await agent_mem.get_active_memories(external_id)
         print(f"   ✅ Final memory count: {len(final_memories)}")
 
@@ -175,8 +241,9 @@ async def test_mcp_server():
             print(f"      Sections:")
             for section_id, section_data in mem.sections.items():
                 count = section_data.get("update_count", 0)
+                awake_count = section_data.get("awake_update_count", 0)
                 content_preview = section_data.get("content", "")[:50]
-                print(f"         • {section_id}: {count} updates - {content_preview}...")
+                print(f"         • {section_id}: {count} updates, {awake_count} awake updates - {content_preview}...")
 
         print("\n" + "=" * 70)
         print("✅ ALL TESTS PASSED! MCP Server is ready!")
@@ -187,10 +254,12 @@ async def test_mcp_server():
         print(f"   • Memory ID: {memory_id}")
         print(f"   • Total sections: {len(memory.sections)}")
         print(f"   • get_active_memories: ✅ Working")
+        print(f"   • create_active_memory: ✅ Working")
         print(f"   • update_memory_section: ✅ Working")
+        print(f"   • delete_active_memory: ✅ Working")
         print(f"   • search_memories: ✅ Working")
 
-        print("\n🎯 Next Step: Implement batch update_memory_sections")
+        print("\n🎯 Next Step: Test batch update_memory_sections")
 
     except Exception as e:
         print(f"\n❌ Test failed: {e}")

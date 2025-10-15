@@ -68,7 +68,8 @@ class EmbeddingService:
             payload = {
                 "model": self.model,
                 "prompt": text,
-                "options": {"num_gpu": 0},
+                # Removed num_gpu: 0 to allow GPU usage
+                # Ollama will automatically use GPU if available
             }
 
             async with aiohttp.ClientSession() as session:

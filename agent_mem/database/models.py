@@ -9,23 +9,23 @@ from pydantic import BaseModel, Field, ConfigDict
 class ActiveMemory(BaseModel):
     """
     Active memory model representing working memory.
-
+    
     Uses template-driven structure with sections:
-    - template_content: YAML template defining structure
-    - sections: JSONB with section_id -> {content: str, update_count: int}
+    - template_content: JSON template with section definitions and defaults
+    - sections: JSONB with section_id -> {content, update_count, awake_update_count, last_updated}
     """
-
+    
     id: int
     external_id: str  # worker_id equivalent - generic identifier
     title: str
-    template_content: str  # YAML template as text
+    template_content: Dict[str, Any]  # Changed from str to Dict
     sections: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict
-    )  # {section_id: {content, update_count}}
+    )  # {section_id: {content, update_count, awake_update_count, last_updated}}
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
-
+    
     model_config = ConfigDict(from_attributes=True)
 
 

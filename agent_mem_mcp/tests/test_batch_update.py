@@ -51,45 +51,50 @@ async def test_batch_update():
         sections_to_update = available_sections[: min(3, len(available_sections))]
 
         print(f"\n3️⃣  Preparing batch update for {len(sections_to_update)} sections...")
+        batch_updates = []
         for section_id in sections_to_update:
             current_count = memory.sections[section_id].get("update_count", 0)
-            print(f"      • {section_id}: current count = {current_count}")
+            current_awake_count = memory.sections[section_id].get("awake_update_count", 0)
+            print(f"      • {section_id}: current count = {current_count}, awake count = {current_awake_count}")
 
-        # Perform batch update
-        print(f"\n4️⃣  Performing batch update...")
-
-        updated_memory = memory
-        update_results = []
-
-        for section_id in sections_to_update:
             current_content = memory.sections[section_id].get("content", "")
-            current_count = memory.sections[section_id].get("update_count", 0)
-
             new_content = (
-                f"{current_content}\n\n**Batch Update Test:** Section updated via batch operation"
+                f"{current_content}\n\n**Batch Update Test:** Section updated via batch operation at {asyncio.get_event_loop().time()}"
             )
+            
+            batch_updates.append({
+                "section_id": section_id, 
+                "new_content": new_content
+            })
 
-            updated_memory = await agent_mem.update_active_memory_sections(
-                external_id=external_id,
-                memory_id=memory_id,
-                sections=[{"section_id": section_id, "new_content": new_content}],
-            )
+        # Perform batch update (single call with multiple sections)
+        print(f"\n4️⃣  Performing batch update with {len(batch_updates)} sections...")
 
-            new_count = updated_memory.sections[section_id].get("update_count", 0)
-            update_results.append(
-                {
-                    "section_id": section_id,
-                    "previous_count": current_count,
-                    "new_count": new_count,
-                }
-            )
+        updated_memory = await agent_mem.update_active_memory_sections(
+            external_id=external_id,
+            memory_id=memory_id,
+            sections=batch_updates,  # Pass all sections in single batch call
+        )
 
         print(f"   ✅ Batch update completed!")
         print(f"\n   Update Results:")
-        for result in update_results:
-            print(
-                f"      • {result['section_id']}: {result['previous_count']} → {result['new_count']}"
-            )
+        update_results = []
+        for update in batch_updates:
+            section_id = update["section_id"]
+            previous_count = memory.sections[section_id].get("update_count", 0)
+            previous_awake_count = memory.sections[section_id].get("awake_update_count", 0)
+            new_count = updated_memory.sections[section_id].get("update_count", 0)
+            new_awake_count = updated_memory.sections[section_id].get("awake_update_count", 0)
+            
+            update_results.append({
+                "section_id": section_id,
+                "previous_count": previous_count,
+                "new_count": new_count,
+                "previous_awake_count": previous_awake_count,
+                "new_awake_count": new_awake_count,
+            })
+            
+            print(f"      • {section_id}: {previous_count} → {new_count} (awake: {previous_awake_count} → {new_awake_count})")
 
         # Verify updates
         print(f"\n5️⃣  Verifying updates...")
@@ -99,7 +104,8 @@ async def test_batch_update():
         print(f"   ✅ Verification complete!")
         for section_id in sections_to_update:
             count = final_memory.sections[section_id].get("update_count", 0)
-            print(f"      • {section_id}: {count} updates")
+            awake_count = final_memory.sections[section_id].get("awake_update_count", 0)
+            print(f"      • {section_id}: {count} updates, {awake_count} awake updates")
 
         print("\n" + "=" * 70)
         print("✅ BATCH UPDATE TEST PASSED!")

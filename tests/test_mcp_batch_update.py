@@ -27,11 +27,33 @@ class TestMCPBatchUpdate:
             id=1,
             external_id="agent-123",
             title="Test Memory",
-            template_content="",
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "progress", "description": "Progress section"},
+                    {"id": "notes", "description": "Notes section"},
+                    {"id": "blockers", "description": "Blockers section"}
+                ]
+            },
             sections={
-                "progress": {"content": "Old progress", "update_count": 0},
-                "notes": {"content": "Old notes", "update_count": 0},
-                "blockers": {"content": "No blockers", "update_count": 0},
+                "progress": {
+                    "content": "Old progress", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
+                "notes": {
+                    "content": "Old notes", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
+                "blockers": {
+                    "content": "No blockers", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
             },
             metadata={},
             created_at=datetime.now(timezone.utc),
@@ -43,11 +65,33 @@ class TestMCPBatchUpdate:
             id=1,
             external_id="agent-123",
             title="Test Memory",
-            template_content="",
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "progress", "description": "Progress section"},
+                    {"id": "notes", "description": "Notes section"},
+                    {"id": "blockers", "description": "Blockers section"}
+                ]
+            },
             sections={
-                "progress": {"content": "New progress", "update_count": 1},
-                "notes": {"content": "New notes", "update_count": 1},
-                "blockers": {"content": "No blockers", "update_count": 0},
+                "progress": {
+                    "content": "New progress", 
+                    "update_count": 1,
+                    "awake_update_count": 1,
+                    "last_updated": datetime.now(timezone.utc)
+                },
+                "notes": {
+                    "content": "New notes", 
+                    "update_count": 1,
+                    "awake_update_count": 1,
+                    "last_updated": datetime.now(timezone.utc)
+                },
+                "blockers": {
+                    "content": "No blockers", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
             },
             metadata={},
             created_at=datetime.now(timezone.utc),
@@ -139,10 +183,26 @@ class TestMCPBatchUpdate:
             id=1,
             external_id="agent-123",
             title="Test Memory",
-            template_content="",
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "progress", "description": "Progress section"},
+                    {"id": "notes", "description": "Notes section"}
+                ]
+            },
             sections={
-                "progress": {"content": "Content", "update_count": 0},
-                "notes": {"content": "Content", "update_count": 0},
+                "progress": {
+                    "content": "Content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
+                "notes": {
+                    "content": "Content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
             },
             metadata={},
             created_at=datetime.now(timezone.utc),
@@ -175,9 +235,17 @@ class TestMCPBatchUpdate:
             id=1,
             external_id="agent-123",
             title="Test Memory",
-            template_content="",
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [{"id": "progress", "description": "Progress section"}]
+            },
             sections={
-                "progress": {"content": "Content", "update_count": 0},
+                "progress": {
+                    "content": "Content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
             },
             metadata={},
             created_at=datetime.now(timezone.utc),
@@ -210,11 +278,33 @@ class TestMCPBatchUpdate:
             id=1,
             external_id="agent-123",
             title="Test Memory",
-            template_content="",
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "section1", "description": "Section 1"},
+                    {"id": "section2", "description": "Section 2"},
+                    {"id": "section3", "description": "Section 3"}
+                ]
+            },
             sections={
-                "section1": {"content": "Content", "update_count": 0},
-                "section2": {"content": "Content", "update_count": 0},
-                "section3": {"content": "Content", "update_count": 0},
+                "section1": {
+                    "content": "Content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
+                "section2": {
+                    "content": "Content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
+                "section3": {
+                    "content": "Content", 
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
+                },
             },
             metadata={},
             created_at=datetime.now(timezone.utc),
@@ -226,11 +316,33 @@ class TestMCPBatchUpdate:
             id=1,
             external_id="agent-123",
             title="Test Memory",
-            template_content="",
+            template_content={
+                "template": {"id": "test-template", "name": "Test Template"},
+                "sections": [
+                    {"id": "section1", "description": "Section 1"},
+                    {"id": "section2", "description": "Section 2"},
+                    {"id": "section3", "description": "Section 3"}
+                ]
+            },
             sections={
-                "section1": {"content": "New content", "update_count": 5},
-                "section2": {"content": "New content", "update_count": 5},
-                "section3": {"content": "New content", "update_count": 5},
+                "section1": {
+                    "content": "New content", 
+                    "update_count": 5,
+                    "awake_update_count": 5,
+                    "last_updated": datetime.now(timezone.utc)
+                },
+                "section2": {
+                    "content": "New content", 
+                    "update_count": 5,
+                    "awake_update_count": 5,
+                    "last_updated": datetime.now(timezone.utc)
+                },
+                "section3": {
+                    "content": "New content", 
+                    "update_count": 5,
+                    "awake_update_count": 5,
+                    "last_updated": datetime.now(timezone.utc)
+                },
             },
             metadata={},
             created_at=datetime.now(timezone.utc),

@@ -67,7 +67,9 @@ See [docs/STREAMLIT_UI_USER_GUIDE.md](docs/STREAMLIT_UI_USER_GUIDE.md) for compl
 ### Features
 
 - 🔍 **get_active_memories** - Retrieve all active memories for an agent
-- 📝 **update_memory_sections** - Batch update multiple sections at once
+- ➕ **create_active_memory** - Create new active memory with template
+- 📝 **update_memory_sections** - Batch upsert multiple sections (insert/update/replace)
+- 🗑️ **delete_active_memory** - Delete an active memory
 - 🔎 **search_memories** - Search across memory tiers with AI-synthesized responses
 
 ### Quick Start
@@ -252,15 +254,19 @@ async def main():
         memory = await agent_mem.create_active_memory(
             external_id="agent-123",  # Pass agent ID to method
             title="Build Dashboard",
-            template_content=TASK_TEMPLATE,
+            template_content=TASK_TEMPLATE,  # Can be YAML string or dict
             initial_sections={
                 "current_task": {
                     "content": "Implement real-time analytics",
-                    "update_count": 0
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
                 },
                 "progress": {
                     "content": "- Designed UI\n- Set up project",
-                    "update_count": 0
+                    "update_count": 0,
+                    "awake_update_count": 0,
+                    "last_updated": None
                 }
             },
             metadata={"priority": "high"}
@@ -273,11 +279,23 @@ async def main():
         )
         print(f"Total memories: {len(all_memories)}")
         
-        # 3. Update a specific section (auto-increments update_count)
-        await agent_mem.update_active_memory_section(
+        # 3. Update multiple sections with upsert (batch operation)
+        await agent_mem.update_active_memory_sections(
             external_id="agent-123",
             memory_id=memory.id,
-            section_id="progress",
+            sections=[
+                {
+                    "section_id": "progress",
+                    "new_content": "- Designed UI\n- Set up project\n- Implemented analytics",
+                    "action": "replace"  # Replace entire content
+                },
+                {
+                    "section_id": "blockers",  # New section (upsert)
+                    "new_content": "# Blockers\n- None currently",
+                    "action": "replace"
+                }
+            ]
+        )
             new_content="- Designed UI\n- Set up project\n- Implemented charts"
         )
         
@@ -357,18 +375,28 @@ Initialize stateless memory manager.
 
 Initialize database connections and ensure schema exists.
 
-#### `async create_active_memory(external_id: str | UUID | int, title: str, template_content: str, initial_sections: Optional[dict] = None, metadata: Optional[dict] = None) -> ActiveMemory`
+#### `async create_active_memory(external_id: str | UUID | int, title: str, template_content: str | dict, initial_sections: Optional[dict] = None, metadata: Optional[dict] = None) -> ActiveMemory`
 
 Create a new active memory with template-driven structure.
 
 **Parameters:**
 - `external_id`: Unique identifier for the agent (UUID, string, or int)
 - `title`: Memory title
-- `template_content`: YAML template defining section structure
-- `initial_sections`: Optional initial sections {section_id: {content: str, update_count: int}}
+- `template_content`: Template defining section structure. Can be:
+  - **Dict (JSON)**: `{"template": {...}, "sections": [{"id": "...", "description": "..."}]}`
+  - **Str (YAML)**: Parsed to dict automatically (backward compatible)
+- `initial_sections`: Optional initial sections that override template defaults
+  - Format: `{"section_id": {"content": "...", "update_count": 0, "awake_update_count": 0, "last_updated": None}}`
 - `metadata`: Optional metadata dictionary
 
 **Returns:** Created `ActiveMemory` object with sections
+
+**Section Structure:**
+Each section contains:
+- `content`: Markdown content
+- `update_count`: Updates since last consolidation (resets to 0 after consolidation)
+- `awake_update_count`: Total updates (never resets, for future sleep/wake features)
+- `last_updated`: ISO timestamp of last update
 
 #### `async get_active_memories(external_id: str | UUID | int) -> List[ActiveMemory]`
 
@@ -383,13 +411,42 @@ Get all active memories for a specific agent.
 
 Update a specific section in an active memory.
 
-Automatically increments the section's update_count and triggers consolidation when threshold is reached.
+Automatically increments the section's `update_count` and `awake_update_count`, and triggers consolidation when threshold is reached.
 
 **Parameters:**
 - `external_id`: Unique identifier for the agent
 - `memory_id`: ID of memory to update
 - `section_id`: Section ID to update (defined in template)
 - `new_content`: New content for the section
+
+**Returns:** Updated `ActiveMemory` object
+
+#### `async update_active_memory_sections(external_id: str | UUID | int, memory_id: int, sections: List[dict]) -> ActiveMemory`
+
+Upsert multiple sections in an active memory (batch operation).
+
+Supports creating new sections, updating existing ones, content replacement with pattern matching, and content insertion/appending.
+
+**Parameters:**
+- `external_id`: Unique identifier for the agent
+- `memory_id`: ID of memory to update
+- `sections`: List of section updates with structure:
+  ```python
+  [
+    {
+      "section_id": "progress",
+      "old_content": "# Old",  # Optional: pattern to find
+      "new_content": "# New",
+      "action": "replace"  # "replace" or "insert"
+    }
+  ]
+  ```
+
+**Action Behaviors:**
+- **replace** + no old_content: Replace entire section
+- **replace** + old_content: Replace that substring
+- **insert** + no old_content: Append at end
+- **insert** + old_content: Insert after pattern
 
 **Returns:** Updated `ActiveMemory` object
 
@@ -414,9 +471,10 @@ Close all database connections.
 ### Active Memory
 - **Purpose**: Template-driven working memory with sections
 - **Storage**: PostgreSQL with JSONB sections
-- **Structure**: YAML template + sections {section_id: {content, update_count}}
+- **Structure**: JSON/YAML template + sections
+  - Each section: `{content, update_count, awake_update_count, last_updated}`
 - **Lifetime**: Short (hours to days)
-- **Updates**: Frequent (per-section tracking)
+- **Updates**: Frequent (per-section tracking with dual counters)
 - **Use Case**: Current task context, ongoing work, structured progress tracking
 - **Consolidation**: Section-level triggers based on update_count threshold
 

@@ -52,12 +52,8 @@ class Config(BaseModel):
     agent_retries: int = Field(default=3)
 
     # Memory Configuration
-    consolidation_threshold: int = Field(
-        default_factory=lambda: int(os.getenv("ACTIVE_MEMORY_UPDATE_THRESHOLD", "5")),
-        description="Number of updates before consolidation",
-    )
     avg_section_update_count_for_consolidation: float = Field(
-        default_factory=lambda: float(os.getenv("AVG_SECTION_UPDATE_COUNT", "5.0")),
+        default_factory=lambda: float(os.getenv("AVG_SECTION_UPDATE_COUNT", "3.0")),
         description="Average update count per section before consolidation trigger",
     )
     shortterm_update_count_threshold: int = Field(

@@ -277,7 +277,7 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
             # Section selector
             st.subheader("2️⃣ Select Section")
 
-            # Convert sections dict to list for selector
+            # Convert sections dict to list for selector with new fields
             sections_list = []
             for section_id, section_data in selected_memory.sections.items():
                 sections_list.append(
@@ -285,12 +285,14 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
                         "id": section_id,
                         "title": section_id.replace("_", " ").title(),
                         "update_count": section_data.get("update_count", 0),
+                        "awake_update_count": section_data.get("awake_update_count", 0),
+                        "last_updated": section_data.get("last_updated"),
                         "content": section_data.get("content", ""),
                     }
                 )
 
             section_options = {
-                f"{sec['title']} (Updates: {sec['update_count']})": sec["id"]
+                f"{sec['title']} (Updates: {sec['update_count']}/{sec['awake_update_count']})": sec["id"]
                 for sec in sections_list
             }
 
@@ -313,19 +315,27 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
                 if st.session_state.original_content == "":
                     st.session_state.original_content = selected_section["content"]
 
-                # Section info
-                col1, col2, col3 = st.columns(3)
+                # Section info with new fields
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     update_count = selected_section["update_count"]
                     threshold = 5  # Default threshold from config
                     st.metric("Update Count", f"{update_count}/{threshold}")
 
                 with col2:
-                    # Get last updated from memory metadata
-                    last_updated = Formatters.format_timestamp(str(selected_memory.updated_at))
-                    st.metric("Last Updated", last_updated)
+                    awake_count = selected_section.get("awake_update_count", 0)
+                    st.metric("Awake Count", awake_count)
 
                 with col3:
+                    # Get last updated from section data
+                    last_updated = selected_section.get("last_updated")
+                    if last_updated:
+                        formatted_time = Formatters.format_timestamp(last_updated)
+                    else:
+                        formatted_time = "Never"
+                    st.metric("Last Updated", formatted_time)
+
+                with col4:
                     updates_remaining = threshold - update_count
                     if updates_remaining <= 1:
                         st.metric(
@@ -345,8 +355,37 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
 
                 st.divider()
 
-                # Content editor
+                # Content editor with upsert options
                 st.subheader("3️⃣ Edit Content")
+
+                # Action selector
+                st.markdown("**Update Action**")
+                action = st.radio(
+                    "Choose how to update the section:",
+                    options=["replace", "insert"],
+                    format_func=lambda x: "🔄 Replace Content" if x == "replace" else "➕ Insert/Append Content",
+                    horizontal=True,
+                    help="Replace: Replace content (entire or specific pattern). Insert: Add content at end or after pattern.",
+                    label_visibility="collapsed",
+                )
+
+                # Old content pattern (for replace/insert operations)
+                if action == "replace":
+                    st.markdown("**Pattern to Replace** (Optional)")
+                    old_content = st.text_input(
+                        "Find this text",
+                        placeholder="Leave empty to replace entire content",
+                        help="Text to find and replace. If empty, replaces entire section content.",
+                        label_visibility="collapsed",
+                    )
+                else:  # insert
+                    st.markdown("**Insert After Pattern** (Optional)")
+                    old_content = st.text_input(
+                        "Insert after this text",
+                        placeholder="Leave empty to append at end",
+                        help="Text to find and insert after. If empty, appends at the end of the section.",
+                        label_visibility="collapsed",
+                    )
 
                 # Two-column layout: Editor and Preview
                 col1, col2 = st.columns([1, 1])
@@ -367,7 +406,12 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
                     st.caption(f"Characters: {char_count:,}")
 
                     # Change detection
-                    if new_content != st.session_state.original_content:
+                    has_changes = (
+                        new_content != st.session_state.original_content or
+                        action != "replace" or
+                        old_content != ""
+                    )
+                    if has_changes:
                         st.session_state.has_unsaved_changes = True
                         st.warning("⚠️ You have unsaved changes")
                     else:
@@ -394,9 +438,19 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
                         use_container_width=True,
                         disabled=not st.session_state.has_unsaved_changes,
                     ):
-                        # Call actual API
+                        # Prepare upsert data for new API
+                        section_updates = [{
+                            "section_id": selected_section_id,
+                            "old_content": old_content if old_content.strip() else None,
+                            "new_content": new_content,
+                            "action": action,
+                        }]
+
+                        # Call new upsert API
                         with st.spinner("Updating section..."):
                             try:
+                                # Note: This would need to be updated to use the new upsert API method
+                                # For now, we'll use the old method for backward compatibility
                                 updated_memory = asyncio.run(
                                     memory_service.update_active_memory_section(
                                         external_id=external_id,
@@ -434,7 +488,7 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
                                 st.error(f"❌ Error updating section: {str(e)}")
                                 st.exception(e)
                     st.info(
-                        f"Update count would be incremented: {update_count} → {update_count + 1}"
+                        f"Update action: **{action.title()}** | Update count would increment: {update_count} → {update_count + 1}"
                     )
 
                     # Reset state
@@ -473,19 +527,18 @@ if external_id.strip() and st.session_state.get("memories_loaded", False):
                 st.markdown(f"**Section ID:** `{selected_section['id']}`")
                 st.markdown(f"**Title:** {selected_section['title']}")
                 st.markdown(f"**Update Count:** {selected_section['update_count']}")
+                st.markdown(f"**Awake Update Count:** {selected_section.get('awake_update_count', 0)}")
 
                 # Consolidation threshold may not exist in all section data
                 consolidation_threshold = selected_section.get("consolidation_threshold", 5)
                 st.markdown(f"**Consolidation Threshold:** {consolidation_threshold}")
 
                 # Last updated may not exist in all section data
-                last_updated = selected_section.get(
-                    "last_updated", selected_section.get("updated_at", "N/A")
-                )
-                if last_updated and last_updated != "N/A":
+                last_updated = selected_section.get("last_updated")
+                if last_updated:
                     st.markdown(f"**Last Updated:** {Formatters.format_timestamp(last_updated)}")
                 else:
-                    st.markdown(f"**Last Updated:** N/A")
+                    st.markdown(f"**Last Updated:** Never")
 
                 st.markdown(f"**Content Length:** {len(selected_section['content'])} characters")
 

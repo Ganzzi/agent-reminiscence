@@ -53,8 +53,18 @@ class TestMemoryManagerActiveMemory:
                 id=1,
                 external_id="test-123",
                 title="Test",
-                template_content="# Template",
-                sections={"summary": {"content": "Test", "update_count": 0}},
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                sections={
+                    "summary": {
+                        "content": "Test", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -65,8 +75,18 @@ class TestMemoryManagerActiveMemory:
             result = await manager.create_active_memory(
                 external_id="test-123",
                 title="Test",
-                template_content="# Template",
-                initial_sections={"summary": {"content": "Test", "update_count": 0}},
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                initial_sections={
+                    "summary": {
+                        "content": "Test", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
                 metadata={},
             )
 
@@ -92,8 +112,18 @@ class TestMemoryManagerActiveMemory:
                     id=1,
                     external_id="test-123",
                     title="Test 1",
-                    template_content="# Template",
-                    sections={"summary": {"content": "Test 1", "update_count": 0}},
+                    template_content={
+                        "template": {"id": "test-template", "name": "Test Template"},
+                        "sections": [{"id": "summary", "description": "Summary section"}]
+                    },
+                    sections={
+                        "summary": {
+                            "content": "Test 1", 
+                            "update_count": 0,
+                            "awake_update_count": 0,
+                            "last_updated": None
+                        }
+                    },
                     metadata={},
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
@@ -132,20 +162,34 @@ class TestMemoryManagerActiveMemory:
                 id=memory_id,
                 external_id="test-123",
                 title="Test",
-                template_content="# Template",
-                sections={"summary": {"content": "Updated", "update_count": 2}},
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                sections={
+                    "summary": {
+                        "content": "Updated", 
+                        "update_count": 2,
+                        "awake_update_count": 2,
+                        "last_updated": datetime.now(timezone.utc)
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
 
-            mock_repo.update_sections = AsyncMock(return_value=updated_memory)
+            mock_repo.upsert_sections = AsyncMock(return_value=updated_memory)
             manager.active_repo = mock_repo
 
             result = await manager.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                sections=[{"section_id": "summary", "new_content": "Updated"}],
+                sections=[{
+                    "section_id": "summary", 
+                    "new_content": "Updated",
+                    "action": "replace"
+                }],
             )
 
             assert result == updated_memory
@@ -174,17 +218,33 @@ class TestMemoryManagerActiveMemory:
                 id=memory_id,
                 external_id="test-123",
                 title="Test",
-                template_content="# Template",
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [
+                        {"id": "summary", "description": "Summary section"},
+                        {"id": "context", "description": "Context section"}
+                    ]
+                },
                 sections={
-                    "summary": {"content": "Updated", "update_count": 3},
-                    "context": {"content": "Context", "update_count": 3},
+                    "summary": {
+                        "content": "Updated", 
+                        "update_count": 3,
+                        "awake_update_count": 3,
+                        "last_updated": datetime.now(timezone.utc)
+                    },
+                    "context": {
+                        "content": "Context", 
+                        "update_count": 3,
+                        "awake_update_count": 3,
+                        "last_updated": datetime.now(timezone.utc)
+                    },
                 },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
 
-            mock_repo.update_sections = AsyncMock(return_value=updated_memory)
+            mock_repo.upsert_sections = AsyncMock(return_value=updated_memory)
             # Note: We'll assume reset happens in the background task
             manager.active_repo = mock_repo
 
@@ -222,17 +282,33 @@ class TestMemoryManagerActiveMemory:
                 id=memory_id,
                 external_id="test-123",
                 title="Test",
-                template_content="# Template",
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [
+                        {"id": "summary", "description": "Summary section"},
+                        {"id": "context", "description": "Context section"}
+                    ]
+                },
                 sections={
-                    "summary": {"content": "Updated", "update_count": 2},
-                    "context": {"content": "Context", "update_count": 2},
+                    "summary": {
+                        "content": "Updated", 
+                        "update_count": 2,
+                        "awake_update_count": 2,
+                        "last_updated": datetime.now(timezone.utc)
+                    },
+                    "context": {
+                        "content": "Context", 
+                        "update_count": 2,
+                        "awake_update_count": 2,
+                        "last_updated": datetime.now(timezone.utc)
+                    },
                 },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
 
-            mock_repo.update_sections = AsyncMock(return_value=updated_memory)
+            mock_repo.upsert_sections = AsyncMock(return_value=updated_memory)
             manager.active_repo = mock_repo
 
             result = await manager.update_active_memory_sections(
@@ -264,8 +340,18 @@ class TestMemoryManagerActiveMemory:
                 id=memory_id,
                 external_id="test-123",
                 title="Test Memory",
-                template_content="# Template",
-                sections={"summary": {"content": "Test", "update_count": 0}},
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                sections={
+                    "summary": {
+                        "content": "Test", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -331,8 +417,18 @@ class TestMemoryManagerActiveMemory:
                 id=memory_id,
                 external_id="different-agent",  # Different external_id
                 title="Test Memory",
-                template_content="# Template",
-                sections={"summary": {"content": "Test", "update_count": 0}},
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                sections={
+                    "summary": {
+                        "content": "Test", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -369,8 +465,18 @@ class TestMemoryManagerActiveMemory:
                 id=memory_id,
                 external_id="test-123",
                 title="Test Memory",
-                template_content="# Template",
-                sections={"summary": {"content": "Test", "update_count": 0}},
+                template_content={
+                    "template": {"id": "test-template", "name": "Test Template"},
+                    "sections": [{"id": "summary", "description": "Summary section"}]
+                },
+                sections={
+                    "summary": {
+                        "content": "Test", 
+                        "update_count": 0,
+                        "awake_update_count": 0,
+                        "last_updated": None
+                    }
+                },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -574,7 +680,7 @@ class TestMemoryManagerHelpers:
             # Create mock entity with importance and types
             entity = MagicMock()
             entity.importance = 0.5
-            entity.types = ["PERSON"]  # Has multiplier of 1.2
+            entity.type = "PERSON"  # Has multiplier of 1.2
 
             importance = manager._calculate_importance(entity)
 
@@ -594,7 +700,7 @@ class TestMemoryManagerHelpers:
             # Create mock entity with high importance and types multiplier
             entity = MagicMock()
             entity.importance = 0.9
-            entity.types = ["PERSON"]  # Has multiplier of 1.2
+            entity.type = "PERSON"  # Has multiplier of 1.2
 
             importance = manager._calculate_importance(entity)
 
