@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-10-23
+
+### Fixed
+- **PyPI Republish**: Fixed version mismatch on PyPI (0.1.0 reported instead of 0.1.2)
+  - Updated `__version__` in `__init__.py` to match `pyproject.toml`
+  - Bumped to 0.1.3 due to PyPI filename reuse restriction
+  - See [PyPI filename reuse policy](https://pypi.org/help/#file-name-reuse)
+
 ## [0.1.2] - 2025-10-23
 
 ### Fixed

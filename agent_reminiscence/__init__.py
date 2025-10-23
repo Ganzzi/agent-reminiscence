@@ -14,7 +14,7 @@ from agent_reminiscence.database.models import (
     RetrievalResult,
 )
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = [
     "AgentMem",
     "Config",
@@ -23,5 +23,3 @@ __all__ = [
     "LongtermMemory",
     "RetrievalResult",
 ]
-
-
