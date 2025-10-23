@@ -76,16 +76,16 @@ See [docs/STREAMLIT_UI_USER_GUIDE.md](docs/STREAMLIT_UI_USER_GUIDE.md) for compl
 
 ```powershell
 # Run the MCP server (recommended: using uv)
-uv run agent_mem_mcp\run.py
+uv run agent_reminiscence_mcp\run.py
 
 # Alternative: using Python directly
-py agent_mem_mcp\run.py
+py agent_reminiscence_mcp\run.py
 
 # Add sample data for testing
-uv run agent_mem_mcp\tests\add_sample_data.py
+uv run agent_reminiscence_mcp\tests\add_sample_data.py
 
 # Test with Python client
-uv run agent_mem_mcp\tests\test_mcp_client.py
+uv run agent_reminiscence_mcp\tests\test_mcp_client.py
 ```
 
 ### Claude Desktop Integration
@@ -95,18 +95,18 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
-    "agent-mem": {
+    "agent-reminiscence": {
       "command": "uv",
       "args": [
         "run",
-        "path_to_agent_mem_mcp\\run.py"
+        "path_to_agent_reminiscence_mcp\\run.py"
       ],
       "env": {
         "POSTGRES_HOST": "localhost",
         "POSTGRES_PORT": "5432",
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": "postgres",
-        "POSTGRES_DB": "agent_mem",
+        "POSTGRES_DB": "agent_reminiscence",
         "NEO4J_URI": "bolt://localhost:7687",
         "NEO4J_USER": "neo4j",
         "NEO4J_PASSWORD": "neo4jpassword",
@@ -125,7 +125,7 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 
 ### Documentation
 
-- **[MCP Server README](agent_mem_mcp/README.md)** - Complete MCP server documentation
+- **[MCP Server README](agent_reminiscence_mcp/README.md)** - Complete MCP server documentation
 - **[Getting Started with MCP](docs/GETTING_STARTED_MCP.md)** - Quick start guide
 - **[MCP Server Status](docs/MCP_SERVER_STATUS.md)** - Implementation status
 - **[Implementation Details](docs/MCP_IMPLEMENTATION_COMPLETE.md)** - Technical details
@@ -150,19 +150,19 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 
 **Linux/Mac:**
 ```bash
-cd libs/agent_mem
+cd libs/agent_reminiscence
 pip install -e .
 ```
 
 **Windows:**
 ```powershell
-cd libs\agent_mem
+cd libs\agent_reminiscence
 py -m pip install -e .
 ```
 
 Or add to your project's requirements:
 ```bash
-echo "agent-mem @ file:///${PWD}/libs/agent_mem" >> requirements.txt
+echo "agent-reminiscence @ file:///${PWD}/libs/agent_reminiscence" >> requirements.txt
 ```
 
 ### Prerequisites
@@ -200,7 +200,7 @@ AgentMem supports three configuration methods:
 #### Pattern 1: Direct Python (Recommended for PyPI users)
 
 ```python
-from agent_mem import AgentMem, Config
+from agent_reminiscence import AgentMem, Config
 
 config = Config(
     postgres_host="localhost",
@@ -210,7 +210,7 @@ config = Config(
     ollama_base_url="http://localhost:11434"
 )
 
-agent_mem = AgentMem(config=config)
+agent_reminiscence = AgentMem(config=config)
 ```
 
 #### Pattern 2: Environment Variables (Recommended for Docker/K8s)
@@ -225,9 +225,9 @@ python your_app.py
 ```
 
 ```python
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 
-agent_mem = AgentMem()  # Uses environment variables
+agent_reminiscence = AgentMem()  # Uses environment variables
 ```
 
 #### Pattern 3: .env File (Convenient for local development)
@@ -240,7 +240,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_password
-POSTGRES_DB=agent_mem
+POSTGRES_DB=agent_reminiscence
 
 # Neo4j
 NEO4J_URI=bolt://localhost:7687
@@ -263,17 +263,17 @@ MEMORY_RETRIEVE_AGENT_MODEL=google:gemini-2.0-flash
 
 ```python
 # Automatically loaded if python-dotenv is available
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 
-agent_mem = AgentMem()  # Uses .env file
+agent_reminiscence = AgentMem()  # Uses .env file
 ```
 
-**Note**: `python-dotenv` is optional. Install with `pip install agent-mem[dev]` for .env file support.
+**Note**: `python-dotenv` is optional. Install with `pip install agent-reminiscence[dev]` for .env file support.
 
 ### Basic Usage
 
 ```python
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 import asyncio
 
 # Template defining memory structure
@@ -290,14 +290,14 @@ sections:
 
 async def main():
     # Initialize STATELESS memory manager (serves multiple agents)
-    agent_mem = AgentMem()
+    agent_reminiscence = AgentMem()
     
     # Initialize database connections
-    await agent_mem.initialize()
+    await agent_reminiscence.initialize()
     
     try:
         # 1. Create an active memory with template
-        memory = await agent_mem.create_active_memory(
+        memory = await agent_reminiscence.create_active_memory(
             external_id="agent-123",  # Pass agent ID to method
             title="Build Dashboard",
             template_content=TASK_TEMPLATE,  # Can be YAML string or dict
@@ -320,13 +320,13 @@ async def main():
         print(f"Created memory: {memory.id}")
         
         # 2. Get all active memories for agent
-        all_memories = await agent_mem.get_active_memories(
+        all_memories = await agent_reminiscence.get_active_memories(
             external_id="agent-123"
         )
         print(f"Total memories: {len(all_memories)}")
         
         # 3. Update multiple sections with upsert (batch operation)
-        await agent_mem.update_active_memory_sections(
+        await agent_reminiscence.update_active_memory_sections(
             external_id="agent-123",
             memory_id=memory.id,
             sections=[
@@ -346,7 +346,7 @@ async def main():
         )
         
         # 4. Retrieve memories (searches across all tiers)
-        results = await agent_mem.retrieve_memories(
+        results = await agent_reminiscence.retrieve_memories(
             external_id="agent-123",
             query="What is the current progress on the dashboard?",
             limit=10,
@@ -361,7 +361,7 @@ async def main():
         
     finally:
         # Clean up connections
-        await agent_mem.close()
+        await agent_reminiscence.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -370,7 +370,7 @@ if __name__ == "__main__":
 ## Architecture
 
 ```
-agent_mem/
+agent_reminiscence/
 ├── __init__.py              # Public API exports
 ├── core.py                  # AgentMem main class (STATELESS)
 ├── config/
@@ -543,7 +543,7 @@ Close all database connections.
 ### Custom Configuration
 
 ```python
-from agent_mem import AgentMem, Config
+from agent_reminiscence import AgentMem, Config
 
 config = Config(
     postgres_host="custom-host",
@@ -552,7 +552,7 @@ config = Config(
     vector_dimension=1024,
 )
 
-agent_mem = AgentMem(external_id="agent-456", config=config)
+agent_reminiscence = AgentMem(external_id="agent-456", config=config)
 ```
 
 ### Automatic Consolidation
@@ -561,7 +561,7 @@ Memory consolidation happens automatically based on update thresholds. You can a
 
 ```python
 # This is done internally, but exposed for advanced use cases
-from agent_mem.services import MemoryManager
+from agent_reminiscence.services import MemoryManager
 
 manager = MemoryManager(external_id="agent-123")
 await manager.consolidate_to_shortterm(active_memory_id=1)
@@ -609,7 +609,7 @@ This ensures no information is lost during promotion and provides a complete aud
 # Entities and relationships are automatically extracted during consolidation
 # You can query them through the retrieval results
 
-result = await agent_mem.retrieve_memories("authentication system")
+result = await agent_reminiscence.retrieve_memories("authentication system")
 
 # Access entities
 for entity in result.entities:
@@ -632,7 +632,7 @@ pip install -e ".[dev]"
 pytest tests/
 
 # Run with coverage
-pytest --cov=agent_mem tests/
+pytest --cov=agent_reminiscence tests/
 ```
 
 ### Building Documentation
@@ -654,5 +654,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Support
 
 - **Documentation**: [Full Documentation](docs/)
-- **Issues**: [GitHub Issues](https://github.com/Ganzzi/agent-mem/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Ganzzi/agent-mem/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Ganzzi/agent-reminiscence/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Ganzzi/agent-reminiscence/discussions)
+

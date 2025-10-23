@@ -219,3 +219,4 @@ er_extractor_agent = Agent(
 ```
 
 This setup ensures that the agent's output will always conform to the `ExtractionResult` model, providing a reliable and structured data source for other parts of the AI Army system.
+

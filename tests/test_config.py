@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from agent_mem.config.settings import Config, get_config, set_config
+from agent_reminiscence.config.settings import Config, get_config, set_config
 
 
 class TestConfig:
@@ -174,3 +174,5 @@ class TestConfigSingleton:
         config = get_config()
         assert config is not None
         assert isinstance(config, Config)
+
+

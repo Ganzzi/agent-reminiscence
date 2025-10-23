@@ -1,8 +1,8 @@
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from agent_mem.database.repositories.longterm_memory import LongtermMemoryRepository
-from agent_mem.database.models import LongtermMemoryChunk, LongtermEntityRelationshipSearchResult
+from agent_reminiscence.database.repositories.longterm_memory import LongtermMemoryRepository
+from agent_reminiscence.database.models import LongtermMemoryChunk, LongtermEntityRelationshipSearchResult
 
 
 class TestLongtermMemoryRepository:
@@ -457,3 +457,5 @@ class TestLongtermMemoryRepository:
         assert params[-4] == start_date  # start_date
         assert params[-2] == 0.8  # min_similarity_score
         assert params[-1] == 0.7  # min_bm25_score
+
+

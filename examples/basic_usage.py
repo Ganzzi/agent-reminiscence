@@ -16,7 +16,7 @@ Prerequisites:
 
 import asyncio
 import logging
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 
 # Set up logging
 logging.basicConfig(
@@ -219,3 +219,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

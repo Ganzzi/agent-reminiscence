@@ -5,7 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.1] - 2025-10-23
+
+### Fixed
+- **Package Naming Consistency**: Corrected package folder structure from `agent_mem` to `agent_reminiscence`
+  - Renamed main package directory to match PyPI package name
+  - Updated all imports throughout codebase (core, tests, examples, docs, scripts)
+  - Updated module references in unit test patches and mocks
+  - Updated configuration files (pyproject.toml, docker-compose.yml)
+  - Updated all documentation and code examples
+- **Package Configuration**: 
+  - Updated `pyproject.toml` to reference correct package name in setuptools discovery
+  - Updated coverage reports to use correct module name
+  - Removed old build artifacts (agent_mem.egg-info, agentmem.egg-info, agent_memory.egg-info)
+
+### Note
+Users upgrading from 0.1.0 must update their imports:
+- Old: `from agent_mem import AgentMem`
+- New: `from agent_reminiscence import AgentMem`
+
+## [0.1.0] - 2025-10-23
 
 ### Added
 - **Streamlit Web UI**: Complete web interface for memory management (Phase 9 - Oct 3, 2025)
@@ -16,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Type-to-confirm deletion with safety checks
   - Responsive design with custom theme
   - Comprehensive user guide and documentation
+- **MCP Server Integration**: Model Context Protocol server for Claude Desktop and MCP clients
+  - Full support for active memory creation and management
+  - Batch section updates with upsert capability (replace/insert actions)
+  - Cross-tier memory search with AI synthesis
+  - Entity and relationship extraction and tracking
+  - Comprehensive API documentation
 - Initial release of Agent Mem
 - Stateless AgentMem interface for multi-agent memory management
 - Three-tier memory system (Active, Shortterm, Longterm)
@@ -30,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Memory Retrieval Agent
 - Hybrid search combining vector similarity and BM25
 - Docker Compose setup for easy deployment
-- Comprehensive test suite with pytest
+- Comprehensive test suite with 229+ tests
 - Documentation with MkDocs
 - Examples demonstrating core functionality
 
@@ -38,12 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stateless Design**: Single instance serves multiple agents
 - **Generic ID Support**: Use UUID, string, or int for agent identifiers
 - **Simple API**: 4 core methods for all memory operations
+- **Batch Updates**: Upsert multiple sections with replace/insert actions
 - **Automatic Consolidation**: Section-level triggers based on update_count
-- **Smart Retrieval**: AI-powered memory search and synthesis
+- **Smart Retrieval**: AI-powered memory search with optional synthesis
 - **Entity Extraction**: Automatic entity and relationship extraction
 - **Production Ready**: Docker setup, comprehensive tests, full documentation
-
-## [0.1.0] - 2025-01-XX (Planned)
 
 ### Release Notes
 Initial alpha release of Agent Mem. Suitable for testing and evaluation.
@@ -61,7 +85,7 @@ Initial alpha release of Agent Mem. Suitable for testing and evaluation.
 
 **Installation:**
 ```bash
-pip install agent-mem
+pip install agent-reminiscence
 ```
 
 ---
@@ -93,5 +117,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute to this project.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/agent-mem/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/agent-mem/discussions)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/agent-reminiscence/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/agent-reminiscence/discussions)
+

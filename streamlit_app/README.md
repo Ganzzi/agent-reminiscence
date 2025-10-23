@@ -41,7 +41,7 @@ Database settings can be configured via environment variables:
 # PostgreSQL
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
-export POSTGRES_DB=agent_memory
+export POSTGRES_DB=agent_reminiscenceory
 export POSTGRES_USER=postgres
 export POSTGRES_PASSWORD=postgres
 
@@ -322,3 +322,4 @@ streamlit_app/
 ## Next Steps
 
 See `docs/STREAMLIT_UI_PLAN.md` for the full implementation plan.
+

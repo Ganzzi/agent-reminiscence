@@ -7,8 +7,8 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from agent_mem.database.repositories.active_memory import ActiveMemoryRepository
-from agent_mem.database.models import ActiveMemory
+from agent_reminiscence.database.repositories.active_memory import ActiveMemoryRepository
+from agent_reminiscence.database.models import ActiveMemory
 
 
 class TestActiveMemoryRepository:
@@ -390,3 +390,5 @@ class TestActiveMemoryRepository:
         # The actual validation happens in Pydantic model
         # Just test that repo can be created
         assert repo.postgres == mock_pg
+
+

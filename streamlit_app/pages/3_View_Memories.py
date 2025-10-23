@@ -266,3 +266,5 @@ else:
 # Footer
 st.divider()
 st.caption(f"Memories Dashboard | {APP_TITLE}")
+
+

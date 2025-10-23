@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from agent_mem.services.memory_manager import MemoryManager
-from agent_mem.database.models import ActiveMemory
+from agent_reminiscence.services.memory_manager import MemoryManager
+from agent_reminiscence.database.models import ActiveMemory
 
 
 class TestMemoryManagerInit:
@@ -21,9 +21,9 @@ class TestMemoryManagerInit:
     def test_initialization(self, test_config):
         """Test manager initialization."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -39,9 +39,9 @@ class TestMemoryManagerActiveMemory:
     async def test_create_active_memory(self, test_config):
         """Test creating active memory."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -97,9 +97,9 @@ class TestMemoryManagerActiveMemory:
     async def test_get_active_memory(self, test_config):
         """Test getting active memories."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -141,9 +141,9 @@ class TestMemoryManagerActiveMemory:
     async def test_update_active_memory_no_consolidation(self, test_config):
         """Test updating active memory without triggering consolidation."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -198,9 +198,9 @@ class TestMemoryManagerActiveMemory:
     async def test_update_active_memory_triggers_consolidation(self, test_config):
         """Test that updating active memory triggers consolidation after threshold."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
             patch("asyncio.create_task") as mock_create_task,
         ):
 
@@ -262,9 +262,9 @@ class TestMemoryManagerActiveMemory:
     async def test_update_active_memory_below_threshold(self, test_config):
         """Test updating active memory below consolidation threshold."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
             patch("asyncio.create_task") as mock_create_task,
         ):
 
@@ -325,9 +325,9 @@ class TestMemoryManagerActiveMemory:
     async def test_delete_active_memory_success(self, test_config):
         """Test successful deletion of active memory."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -374,9 +374,9 @@ class TestMemoryManagerActiveMemory:
     async def test_delete_active_memory_not_found(self, test_config):
         """Test deletion when memory is not found."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -402,9 +402,9 @@ class TestMemoryManagerActiveMemory:
     async def test_delete_active_memory_wrong_agent(self, test_config):
         """Test deletion when memory belongs to different agent."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -450,9 +450,9 @@ class TestMemoryManagerActiveMemory:
     async def test_delete_active_memory_delete_fails(self, test_config):
         """Test deletion when repository delete operation fails."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -503,9 +503,9 @@ class TestMemoryManagerConsolidation:
     async def test_consolidate_to_shortterm(self, test_config):
         """Test consolidation workflow (internal method)."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -519,9 +519,9 @@ class TestMemoryManagerConsolidation:
     async def test_consolidate_with_lock_success(self, test_config):
         """Test successful consolidation with lock mechanism."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -543,9 +543,9 @@ class TestMemoryManagerConsolidation:
     async def test_consolidate_with_lock_concurrent_access(self, test_config):
         """Test that concurrent consolidation attempts are handled correctly."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -575,9 +575,9 @@ class TestMemoryManagerConsolidation:
     async def test_consolidate_with_lock_error_handling(self, test_config):
         """Test error handling in consolidation with lock."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -605,9 +605,9 @@ class TestMemoryManagerPromotion:
     async def test_promote_to_longterm(self, test_config):
         """Test promotion to longterm memory (internal method)."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -625,13 +625,13 @@ class TestMemoryManagerRetrieval:
     async def test_retrieve_memories_basic(self, test_config):
         """Test basic memory retrieval."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
-            patch("agent_mem.services.memory_manager.retrieve_memory") as mock_retrieve,
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.retrieve_memory") as mock_retrieve,
         ):
 
-            from agent_mem.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResult
 
             manager = MemoryManager(test_config)
             manager._initialized = True  # Bypass initialization check
@@ -670,9 +670,9 @@ class TestMemoryManagerHelpers:
     def test_calculate_importance_with_multiplier(self, test_config):
         """Test importance calculation with type multiplier."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -690,9 +690,9 @@ class TestMemoryManagerHelpers:
     def test_calculate_importance_capped(self, test_config):
         """Test importance calculation is capped at 1.0."""
         with (
-            patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-            patch("agent_mem.services.memory_manager.Neo4jManager"),
-            patch("agent_mem.services.memory_manager.EmbeddingService"),
+            patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+            patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+            patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
         ):
 
             manager = MemoryManager(test_config)
@@ -706,3 +706,5 @@ class TestMemoryManagerHelpers:
 
             # 0.9 * 1.2 = 1.08, but should be capped at 1.0
             assert importance == 1.0
+
+

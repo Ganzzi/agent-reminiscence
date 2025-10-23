@@ -1,10 +1,10 @@
 site_name: Agent Mem Documentation
 site_description: Hierarchical memory management for AI agents with vector search and graph relationships
 site_author: Agent Mem Team
-site_url: https://github.com/Ganzzi/agent-mem
+site_url: https://github.com/Ganzzi/agent-reminiscence
 
-repo_name: Ganzzi/agent-mem
-repo_url: https://github.com/Ganzzi/agent-mem
+repo_name: Ganzzi/agent-reminiscence
+repo_url: https://github.com/Ganzzi/agent-reminiscence
 edit_uri: edit/main/docs/
 
 theme:
@@ -83,7 +83,7 @@ nav:
     - Memory Retrieval: guide/memory-retrieval.md
     - Best Practices: guide/best-practices.md
   - API Reference:
-    - AgentMem: api/agent-mem.md
+    - AgentMem: api/agent-reminiscence.md
     - Models: api/models.md
     - Configuration: api/configuration.md
   - Deployment:
@@ -100,9 +100,9 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Ganzzi/agent-mem
+      link: https://github.com/Ganzzi/agent-reminiscence
     - icon: fontawesome/brands/python
-      link: https://pypi.org/project/agent-mem/
+      link: https://pypi.org/project/agent-reminiscence/
 
 extra_css:
   - stylesheets/extra.css

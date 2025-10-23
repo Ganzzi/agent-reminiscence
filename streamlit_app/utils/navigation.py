@@ -254,3 +254,5 @@ def add_keyboard_shortcuts_help() -> None:
             st.caption("• `Enter` - Submit input")
             st.caption("• `Ctrl+Enter` - Submit text area")
             st.caption("• `Tab` - Next field")
+
+

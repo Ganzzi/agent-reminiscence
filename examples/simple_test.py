@@ -8,7 +8,7 @@ This script shows how to:
 
 import asyncio
 import logging
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -151,3 +151,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

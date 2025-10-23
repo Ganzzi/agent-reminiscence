@@ -11,7 +11,7 @@ Be respectful, inclusive, and professional. We aim to foster a welcoming communi
 ### Reporting Bugs
 
 Before creating a bug report:
-1. Check the [existing issues](https://github.com/yourusername/agent-mem/issues)
+1. Check the [existing issues](https://github.com/yourusername/agent-reminiscence/issues)
 2. Verify you're using the latest version
 3. Test with a minimal reproducible example
 
@@ -34,8 +34,8 @@ Feature requests are welcome! Please:
 
 1. **Fork and clone** the repository
    ```bash
-   git clone https://github.com/yourusername/agent-mem.git
-   cd agent-mem
+   git clone https://github.com/yourusername/agent-reminiscence.git
+   cd agent-reminiscence
    ```
 
 2. **Create a branch** for your changes
@@ -61,16 +61,16 @@ Feature requests are welcome! Please:
    pytest tests/ -v
    
    # Check coverage
-   pytest --cov=agent_mem tests/
+   pytest --cov=agent_reminiscence tests/
    
    # Format code
-   black agent_mem/ tests/ examples/
+   black agent_reminiscence/ tests/ examples/
    
    # Lint code
-   ruff check agent_mem/ tests/ examples/
+   ruff check agent_reminiscence/ tests/ examples/
    
    # Type checking
-   mypy agent_mem/
+   mypy agent_reminiscence/
    ```
 
 6. **Commit your changes**
@@ -143,12 +143,12 @@ async def create_memory(
 
 ```python
 import pytest
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 
 @pytest.mark.asyncio
-async def test_create_memory(agent_mem):
+async def test_create_memory(agent_reminiscence):
     """Test memory creation."""
-    memory = await agent_mem.create_active_memory(
+    memory = await agent_reminiscence.create_active_memory(
         external_id="test-agent",
         title="Test Memory",
         template_content=TEMPLATE
@@ -167,16 +167,16 @@ async def test_create_memory(agent_mem):
 
 If you modify the database schema:
 
-1. Update `agent_mem/sql/schema.sql`
-2. Create migration script in `agent_mem/sql/migrations/`
-3. Update models in `agent_mem/database/models.py`
+1. Update `agent_reminiscence/sql/schema.sql`
+2. Create migration script in `agent_reminiscence/sql/migrations/`
+3. Update models in `agent_reminiscence/database/models.py`
 4. Document changes in PR description
 
 ## Project Structure
 
 ```
-agent_mem/
-├── agent_mem/          # Main package
+agent_reminiscence/
+├── agent_reminiscence/          # Main package
 │   ├── core.py        # Main AgentMem class
 │   ├── config/        # Configuration
 │   ├── database/      # Database managers and repositories
@@ -191,8 +191,8 @@ agent_mem/
 
 ## Getting Help
 
-- **Questions**: Open a [GitHub Discussion](https://github.com/yourusername/agent-mem/discussions)
-- **Bugs**: Open a [GitHub Issue](https://github.com/yourusername/agent-mem/issues)
+- **Questions**: Open a [GitHub Discussion](https://github.com/yourusername/agent-reminiscence/discussions)
+- **Bugs**: Open a [GitHub Issue](https://github.com/yourusername/agent-reminiscence/issues)
 - **Chat**: Join our community (link TBD)
 
 ## Development Setup Checklist
@@ -224,3 +224,4 @@ Contributors will be recognized in:
 - Release notes
 
 Thank you for contributing to Agent Mem! 🎉
+

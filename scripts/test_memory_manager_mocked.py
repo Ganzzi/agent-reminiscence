@@ -24,14 +24,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent_mem.services.memory_manager import MemoryManager
-from agent_mem.database.models import (
+from agent_reminiscence.services.memory_manager import MemoryManager
+from agent_reminiscence.database.models import (
     ActiveMemory,
     ShorttermMemoryChunk,
     LongtermMemoryChunk,
     RetrievalResult,
 )
-from agent_mem.config.settings import get_config
+from agent_reminiscence.config.settings import get_config
 
 # Setup logging
 logging.basicConfig(
@@ -49,9 +49,9 @@ def create_mock_memory_manager(config):
     """Create a memory manager with mocked dependencies."""
 
     with (
-        patch("agent_mem.services.memory_manager.PostgreSQLManager"),
-        patch("agent_mem.services.memory_manager.Neo4jManager"),
-        patch("agent_mem.services.memory_manager.EmbeddingService"),
+        patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
+        patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
+        patch("agent_reminiscence.services.memory_manager.EmbeddingService"),
     ):
         manager = MemoryManager(config)
         manager._initialized = True  # Bypass initialization
@@ -507,3 +507,5 @@ if __name__ == "__main__":
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)
+
+

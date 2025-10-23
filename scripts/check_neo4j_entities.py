@@ -1,8 +1,8 @@
 """Check what entities are in Neo4j."""
 
 import asyncio
-from agent_mem.config.settings import get_config
-from agent_mem.database.neo4j_manager import Neo4jManager
+from agent_reminiscence.config.settings import get_config
+from agent_reminiscence.database.neo4j_manager import Neo4jManager
 
 
 async def check():
@@ -59,3 +59,5 @@ async def check():
 
 if __name__ == "__main__":
     asyncio.run(check())
+
+

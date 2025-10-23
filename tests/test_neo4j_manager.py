@@ -5,8 +5,8 @@ Tests for Neo4j manager (database/neo4j_manager.py).
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_mem.config.settings import Config
-from agent_mem.database.neo4j_manager import Neo4jManager
+from agent_reminiscence.config.settings import Config
+from agent_reminiscence.database.neo4j_manager import Neo4jManager
 
 
 class TestNeo4jManager:
@@ -23,7 +23,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_initialize(self, test_config: Config):
         """Test initialize method creates driver."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_driver = MagicMock()
             mock_driver.verify_connectivity = AsyncMock()
             mock_graph.driver.return_value = mock_driver
@@ -39,7 +39,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_close(self, test_config: Config):
         """Test closing the driver."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_driver = MagicMock()
             mock_driver.close = AsyncMock()
             mock_driver.verify_connectivity = AsyncMock()
@@ -56,7 +56,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_execute_read(self, test_config: Config):
         """Test execute_read method."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_result = [{"name": "test", "value": 123}]
 
             # Mock the session and its run method
@@ -83,7 +83,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_execute_write(self, test_config: Config):
         """Test execute_write method."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_result = [{"created": 1}]
 
             # Mock the session and its run method
@@ -112,7 +112,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_session_context_manager(self, test_config: Config):
         """Test using session as context manager."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock()
@@ -131,7 +131,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_error_handling_read(self, test_config: Config):
         """Test error handling in execute_read."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_run_result = MagicMock()
             mock_run_result.data = AsyncMock(side_effect=Exception("Neo4j error"))
 
@@ -154,7 +154,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_error_handling_write(self, test_config: Config):
         """Test error handling in execute_write."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_run_result = MagicMock()
             mock_run_result.data = AsyncMock(side_effect=Exception("Write error"))
 
@@ -177,7 +177,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_parameterized_queries(self, test_config: Config):
         """Test parameterized queries with various data types."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_result = [{"success": True}]
 
             mock_run_result = MagicMock()
@@ -212,7 +212,7 @@ class TestNeo4jManager:
     @pytest.mark.asyncio
     async def test_empty_result(self, test_config: Config):
         """Test handling empty query results."""
-        with patch("agent_mem.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
+        with patch("agent_reminiscence.database.neo4j_manager.AsyncGraphDatabase") as mock_graph:
             mock_result = []
 
             mock_run_result = MagicMock()
@@ -234,3 +234,5 @@ class TestNeo4jManager:
             result = await manager.execute_read("MATCH (n:NonExistent) RETURN n")
 
             assert result == []
+
+

@@ -16,7 +16,7 @@ Before running examples, ensure you have:
 2. Started services:
    ```bash
    docker-compose up -d
-   docker exec -it agent_mem_ollama ollama pull nomic-embed-text
+   docker exec -it agent_reminiscence_ollama ollama pull nomic-embed-text
    ```
 
 3. Configured `.env` file (copy from `.env.example`)
@@ -70,21 +70,21 @@ Basic template for a new example:
 ```python
 import asyncio
 import logging
-from agent_mem import AgentMem
+from agent_reminiscence import AgentMem
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def main():
-    agent_mem = AgentMem()
-    await agent_mem.initialize()
+    agent_reminiscence = AgentMem()
+    await agent_reminiscence.initialize()
     
     try:
         # Your code here
         pass
         
     finally:
-        await agent_mem.close()
+        await agent_reminiscence.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -111,10 +111,10 @@ docker-compose logs ollama
 curl http://localhost:11434
 
 # Verify model is pulled
-docker exec -it agent_mem_ollama ollama list
+docker exec -it agent_reminiscence_ollama ollama list
 
 # Pull model if needed
-docker exec -it agent_mem_ollama ollama pull nomic-embed-text
+docker exec -it agent_reminiscence_ollama ollama pull nomic-embed-text
 ```
 
 ### Import Errors
@@ -133,3 +133,4 @@ pip install -e ".[dev]"
 - Read the [Documentation](../docs/index.md)
 - Check the [API Reference](../docs/api/agent-mem.md)
 - Review [Best Practices](../docs/guide/best-practices.md)
+

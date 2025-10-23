@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from streamlit_app.services.memory_service import MemoryService
 from streamlit_app.services.template_service import TemplateService
-from agent_mem import AgentMem
-from agent_mem.config import Config
+from agent_reminiscence import AgentMem
+from agent_reminiscence.config import Config
 
 
 # Test configuration - uses test database
@@ -397,3 +397,5 @@ class TestErrorHandling:
 
 # Run tests with: pytest tests/test_streamlit_integration.py -v -s
 # Or: pytest tests/test_streamlit_integration.py::TestMemoryServiceIntegration::test_create_memory_with_template -v
+
+

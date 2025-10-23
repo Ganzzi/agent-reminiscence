@@ -1,6 +1,6 @@
 # Agent Mem Tests
 
-Comprehensive test suite for the `agent_mem` package.
+Comprehensive test suite for the `agent_reminiscence` package.
 
 ## Overview
 
@@ -76,7 +76,7 @@ pytest -m "not slow"
 
 ```bash
 # Generate coverage report
-pytest --cov=agent_mem --cov-report=html
+pytest --cov=agent_reminiscence --cov-report=html
 
 # View coverage in browser
 # Open htmlcov/index.html
@@ -134,7 +134,7 @@ Set these for integration tests with real databases:
 # PostgreSQL
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
-export POSTGRES_DB=agent_mem_test
+export POSTGRES_DB=agent_reminiscence_test
 export POSTGRES_USER=postgres
 export POSTGRES_PASSWORD=postgres
 
@@ -231,9 +231,9 @@ async def test_my_feature(mock_postgres_manager):
 @pytest.mark.asyncio
 async def test_full_workflow(test_config):
     """Test end-to-end workflow."""
-    async with AgentMem(config=test_config) as agent_mem:
+    async with AgentMem(config=test_config) as agent_reminiscence:
         # Test workflow
-        memory = await agent_mem.create_active_memory(...)
+        memory = await agent_reminiscence.create_active_memory(...)
         assert memory is not None
 ```
 
@@ -242,11 +242,11 @@ async def test_full_workflow(test_config):
 Target coverage: **>80%**
 
 Current coverage by module:
-- `agent_mem/config/`: Target 95%
-- `agent_mem/database/`: Target 85%
-- `agent_mem/services/`: Target 90%
-- `agent_mem/agents/`: Target 85%
-- `agent_mem/core.py`: Target 95%
+- `agent_reminiscence/config/`: Target 95%
+- `agent_reminiscence/database/`: Target 85%
+- `agent_reminiscence/services/`: Target 90%
+- `agent_reminiscence/agents/`: Target 85%
+- `agent_reminiscence/core.py`: Target 95%
 
 ## Continuous Integration
 
@@ -327,3 +327,4 @@ When adding new features:
 **Last Updated**: October 2, 2025  
 **Test Count**: 200+ tests across 13 test files  
 **Coverage**: Target >80%
+

@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, timezone
 from pydantic import ValidationError
 
-from agent_mem.database.models import (
+from agent_reminiscence.database.models import (
     ActiveMemory,
     ShorttermMemory,
     ShorttermMemoryChunk,
@@ -362,3 +362,5 @@ class TestLongtermRelationship:
 # class TestRelationshipUpdateData:
 #     """Test RelationshipUpdateData model."""
 #     (tests omitted - model doesn't exist)
+
+

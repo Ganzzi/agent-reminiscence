@@ -472,3 +472,5 @@ with st.sidebar:
         st.metric("Agent Types", len(agent_types))
     except:
         pass
+
+

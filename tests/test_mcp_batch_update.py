@@ -9,8 +9,8 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_mem import AgentMem
-from agent_mem.database.models import ActiveMemory
+from agent_reminiscence import AgentMem
+from agent_reminiscence.database.models import ActiveMemory
 
 
 class TestMCPBatchUpdate:
@@ -32,27 +32,27 @@ class TestMCPBatchUpdate:
                 "sections": [
                     {"id": "progress", "description": "Progress section"},
                     {"id": "notes", "description": "Notes section"},
-                    {"id": "blockers", "description": "Blockers section"}
-                ]
+                    {"id": "blockers", "description": "Blockers section"},
+                ],
             },
             sections={
                 "progress": {
-                    "content": "Old progress", 
+                    "content": "Old progress",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
                 "notes": {
-                    "content": "Old notes", 
+                    "content": "Old notes",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
                 "blockers": {
-                    "content": "No blockers", 
+                    "content": "No blockers",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
             },
             metadata={},
@@ -70,27 +70,27 @@ class TestMCPBatchUpdate:
                 "sections": [
                     {"id": "progress", "description": "Progress section"},
                     {"id": "notes", "description": "Notes section"},
-                    {"id": "blockers", "description": "Blockers section"}
-                ]
+                    {"id": "blockers", "description": "Blockers section"},
+                ],
             },
             sections={
                 "progress": {
-                    "content": "New progress", 
+                    "content": "New progress",
                     "update_count": 1,
                     "awake_update_count": 1,
-                    "last_updated": datetime.now(timezone.utc)
+                    "last_updated": datetime.now(timezone.utc),
                 },
                 "notes": {
-                    "content": "New notes", 
+                    "content": "New notes",
                     "update_count": 1,
                     "awake_update_count": 1,
-                    "last_updated": datetime.now(timezone.utc)
+                    "last_updated": datetime.now(timezone.utc),
                 },
                 "blockers": {
-                    "content": "No blockers", 
+                    "content": "No blockers",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
             },
             metadata={},
@@ -103,7 +103,7 @@ class TestMCPBatchUpdate:
         mock_agent_mem.update_active_memory_sections = AsyncMock(return_value=updated_memory)
 
         # Import handler after mocking
-        from agent_mem_mcp.server import _handle_update_memory_sections
+        from agent_reminiscence_mcp.server import _handle_update_memory_sections
 
         # Prepare arguments
         arguments = {
@@ -157,7 +157,7 @@ class TestMCPBatchUpdate:
         """Test validation in batch update handler."""
         mock_agent_mem = MagicMock(spec=AgentMem)
 
-        from agent_mem_mcp.server import _handle_update_memory_sections
+        from agent_reminiscence_mcp.server import _handle_update_memory_sections
 
         # Test empty external_id
         with pytest.raises(ValueError, match="external_id cannot be empty"):
@@ -187,21 +187,21 @@ class TestMCPBatchUpdate:
                 "template": {"id": "test-template", "name": "Test Template"},
                 "sections": [
                     {"id": "progress", "description": "Progress section"},
-                    {"id": "notes", "description": "Notes section"}
-                ]
+                    {"id": "notes", "description": "Notes section"},
+                ],
             },
             sections={
                 "progress": {
-                    "content": "Content", 
+                    "content": "Content",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
                 "notes": {
-                    "content": "Content", 
+                    "content": "Content",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
             },
             metadata={},
@@ -211,7 +211,7 @@ class TestMCPBatchUpdate:
 
         mock_agent_mem.get_active_memories = AsyncMock(return_value=[current_memory])
 
-        from agent_mem_mcp.server import _handle_update_memory_sections
+        from agent_reminiscence_mcp.server import _handle_update_memory_sections
 
         # Try to update non-existent section
         arguments = {
@@ -237,14 +237,14 @@ class TestMCPBatchUpdate:
             title="Test Memory",
             template_content={
                 "template": {"id": "test-template", "name": "Test Template"},
-                "sections": [{"id": "progress", "description": "Progress section"}]
+                "sections": [{"id": "progress", "description": "Progress section"}],
             },
             sections={
                 "progress": {
-                    "content": "Content", 
+                    "content": "Content",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
             },
             metadata={},
@@ -254,7 +254,7 @@ class TestMCPBatchUpdate:
 
         mock_agent_mem.get_active_memories = AsyncMock(return_value=[current_memory])
 
-        from agent_mem_mcp.server import _handle_update_memory_sections
+        from agent_reminiscence_mcp.server import _handle_update_memory_sections
 
         # Try to update with empty content
         arguments = {
@@ -283,27 +283,27 @@ class TestMCPBatchUpdate:
                 "sections": [
                     {"id": "section1", "description": "Section 1"},
                     {"id": "section2", "description": "Section 2"},
-                    {"id": "section3", "description": "Section 3"}
-                ]
+                    {"id": "section3", "description": "Section 3"},
+                ],
             },
             sections={
                 "section1": {
-                    "content": "Content", 
+                    "content": "Content",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
                 "section2": {
-                    "content": "Content", 
+                    "content": "Content",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
                 "section3": {
-                    "content": "Content", 
+                    "content": "Content",
                     "update_count": 0,
                     "awake_update_count": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 },
             },
             metadata={},
@@ -321,27 +321,27 @@ class TestMCPBatchUpdate:
                 "sections": [
                     {"id": "section1", "description": "Section 1"},
                     {"id": "section2", "description": "Section 2"},
-                    {"id": "section3", "description": "Section 3"}
-                ]
+                    {"id": "section3", "description": "Section 3"},
+                ],
             },
             sections={
                 "section1": {
-                    "content": "New content", 
+                    "content": "New content",
                     "update_count": 5,
                     "awake_update_count": 5,
-                    "last_updated": datetime.now(timezone.utc)
+                    "last_updated": datetime.now(timezone.utc),
                 },
                 "section2": {
-                    "content": "New content", 
+                    "content": "New content",
                     "update_count": 5,
                     "awake_update_count": 5,
-                    "last_updated": datetime.now(timezone.utc)
+                    "last_updated": datetime.now(timezone.utc),
                 },
                 "section3": {
-                    "content": "New content", 
+                    "content": "New content",
                     "update_count": 5,
                     "awake_update_count": 5,
-                    "last_updated": datetime.now(timezone.utc)
+                    "last_updated": datetime.now(timezone.utc),
                 },
             },
             metadata={},
@@ -352,7 +352,7 @@ class TestMCPBatchUpdate:
         mock_agent_mem.get_active_memories = AsyncMock(return_value=[current_memory])
         mock_agent_mem.update_active_memory_sections = AsyncMock(return_value=updated_memory)
 
-        from agent_mem_mcp.server import _handle_update_memory_sections
+        from agent_reminiscence_mcp.server import _handle_update_memory_sections
 
         arguments = {
             "external_id": "agent-123",

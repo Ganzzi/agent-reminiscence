@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from agent_mem.core import AgentMem
-from agent_mem.database.models import ActiveMemory
+from agent_reminiscence.core import AgentMem
+from agent_reminiscence.database.models import ActiveMemory
 
 
 @pytest.mark.integration
@@ -25,9 +25,9 @@ class TestEndToEndWorkflow:
     async def test_full_memory_lifecycle(self, test_config):
         """Test complete workflow: create → update → consolidate → retrieve."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             # Setup mock memory manager with AsyncMock for async methods
@@ -92,7 +92,7 @@ class TestEndToEndWorkflow:
             mock_mm_instance.update_active_memory_section = AsyncMock(side_effect=updates)
 
             # Mock retrieve with proper RetrievalResult structure
-            from agent_mem.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResult
 
             mock_retrieval_result = RetrievalResult(
                 mode="synthesis",
@@ -163,9 +163,9 @@ class TestConsolidationWorkflow:
     async def test_consolidation_with_entities(self, test_config):
         """Test consolidation extracts and stores entities."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -186,9 +186,9 @@ class TestConsolidationWorkflow:
     async def test_consolidation_chunking(self, test_config):
         """Test that consolidation properly chunks content."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -254,9 +254,9 @@ class TestPromotionWorkflow:
     async def test_promotion_with_importance_threshold(self, test_config):
         """Test that only important memories are promoted."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -272,9 +272,9 @@ class TestPromotionWorkflow:
     async def test_promotion_entity_confidence_update(self, test_config):
         """Test that entity confidence is updated during promotion."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -295,12 +295,12 @@ class TestCrossTierSearch:
     async def test_search_all_tiers(self, test_config):
         """Test search across active, shortterm, and longterm."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            from agent_mem.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResult
 
             mock_result = RetrievalResult(
                 mode="synthesis",
@@ -330,12 +330,12 @@ class TestCrossTierSearch:
     async def test_hybrid_search_weighting(self, test_config):
         """Test hybrid search with different weights."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            from agent_mem.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResult
 
             mock_result = RetrievalResult(
                 mode="synthesis",
@@ -369,9 +369,9 @@ class TestEntityRelationshipPersistence:
     async def test_entity_extraction_and_storage(self, test_config):
         """Test that entities are extracted and stored in Neo4j."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -394,9 +394,9 @@ class TestEntityRelationshipPersistence:
     async def test_relationship_creation(self, test_config):
         """Test that relationships are created between entities."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -412,9 +412,9 @@ class TestEntityRelationshipPersistence:
     async def test_entity_merging_on_similarity(self, test_config):
         """Test that similar entities are auto-merged."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -437,7 +437,7 @@ class TestErrorRecovery:
     @pytest.mark.asyncio
     async def test_database_connection_error(self, test_config):
         """Test handling of database connection errors."""
-        with patch("agent_mem.database.PostgreSQLManager") as mock_pg:
+        with patch("agent_reminiscence.database.PostgreSQLManager") as mock_pg:
             mock_pg_instance = MagicMock()
             mock_pg_instance.initialize = AsyncMock(side_effect=Exception("Connection failed"))
             mock_pg.return_value = mock_pg_instance
@@ -451,9 +451,9 @@ class TestErrorRecovery:
     async def test_partial_consolidation_failure(self, test_config):
         """Test handling of partial consolidation failures."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -473,9 +473,9 @@ class TestErrorRecovery:
     async def test_embedding_generation_fallback(self, test_config):
         """Test fallback when embedding generation fails."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -500,9 +500,9 @@ class TestPerformanceCharacteristics:
     async def test_batch_memory_creation(self, test_config):
         """Test creating multiple memories."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -524,9 +524,9 @@ class TestPerformanceCharacteristics:
     async def test_search_with_large_result_set(self, test_config):
         """Test search returning many results."""
         with (
-            patch("agent_mem.database.PostgreSQLManager"),
-            patch("agent_mem.database.Neo4jManager"),
-            patch("agent_mem.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.database.PostgreSQLManager"),
+            patch("agent_reminiscence.database.Neo4jManager"),
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
             mock_mm_instance = MagicMock()
@@ -542,3 +542,5 @@ class TestPerformanceCharacteristics:
                 )
 
                 assert result is not None
+
+

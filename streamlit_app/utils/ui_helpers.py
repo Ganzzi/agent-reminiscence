@@ -364,3 +364,5 @@ def create_alert_box(message: str, alert_type: str = "info", dismissible: bool =
         st.warning(f"{icon} {message}")
     elif alert_type == "error":
         st.error(f"{icon} {message}")
+
+

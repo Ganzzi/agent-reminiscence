@@ -5,8 +5,8 @@ Tests for Embedding Service (services/embedding.py).
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_mem.config.settings import Config
-from agent_mem.services.embedding import EmbeddingService
+from agent_reminiscence.config.settings import Config
+from agent_reminiscence.services.embedding import EmbeddingService
 
 
 class TestEmbeddingService:
@@ -175,3 +175,5 @@ class TestEmbeddingService:
         assert len(results) == 5
         # All should use the same mock
         assert service.get_embedding.call_count == 5
+
+

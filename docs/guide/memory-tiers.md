@@ -35,7 +35,7 @@ active_memories
 
 **Example**:
 ```python
-memory = await agent_mem.create_active_memory(
+memory = await agent_reminiscence.create_active_memory(
     external_id="agent-123",
     title="API Development",
     template_content=API_TEMPLATE,
@@ -92,7 +92,7 @@ shortterm_memories
 **Example**:
 ```python
 # Automatic consolidation from active memory
-await agent_mem.update_active_memory_section(
+await agent_reminiscence.update_active_memory_section(
     external_id="agent-123",
     memory_id=1,
     section_id="endpoints",
@@ -101,7 +101,7 @@ await agent_mem.update_active_memory_section(
 # After threshold reached, section consolidates to shortterm
 
 # Manual retrieval
-results = await agent_mem.retrieve_memories(
+results = await agent_reminiscence.retrieve_memories(
     external_id="agent-123",
     query="API endpoint implementations",
     search_shortterm=True,
@@ -152,7 +152,7 @@ longterm_memories
 # (Happens internally based on importance_score >= threshold)
 
 # Retrieval includes longterm by default
-results = await agent_mem.retrieve_memories(
+results = await agent_reminiscence.retrieve_memories(
     external_id="agent-123",
     query="system architecture patterns",
     search_longterm=True
@@ -164,7 +164,7 @@ results = await agent_mem.retrieve_memories(
 ### 1. Creation (Active)
 
 ```python
-memory = await agent_mem.create_active_memory(
+memory = await agent_reminiscence.create_active_memory(
     external_id="agent-123",
     title="Feature Development",
     template_content=TEMPLATE,
@@ -176,7 +176,7 @@ memory = await agent_mem.create_active_memory(
 
 ```python
 # Each update increments section's update_count
-await agent_mem.update_active_memory_section(
+await agent_reminiscence.update_active_memory_section(
     external_id="agent-123",
     memory_id=memory.id,
     section_id="task",
@@ -246,7 +246,7 @@ config = Config(
     active_memory_update_threshold=5,
     shortterm_promotion_threshold=0.7
 )
-agent_mem = AgentMem(config=config)
+agent_reminiscence = AgentMem(config=config)
 ```
 
 ## Next Steps
@@ -254,3 +254,4 @@ agent_mem = AgentMem(config=config)
 - **[Active Memory Guide](active-memory.md)**: Working with templates
 - **[Memory Retrieval](memory-retrieval.md)**: Advanced search
 - **[Best Practices](best-practices.md)**: Optimization tips
+

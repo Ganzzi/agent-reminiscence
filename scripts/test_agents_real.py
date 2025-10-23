@@ -21,16 +21,16 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent_mem.agents.er_extractor import extract_entities_and_relationships
-from agent_mem.agents.memorizer import resolve_conflicts, format_conflicts_as_text
-from agent_mem.database.models import (
+from agent_reminiscence.agents.er_extractor import extract_entities_and_relationships
+from agent_reminiscence.agents.memorizer import resolve_conflicts, format_conflicts_as_text
+from agent_reminiscence.database.models import (
     ConsolidationConflicts,
     ConflictSection,
     ConflictEntityDetail,
     ConflictRelationshipDetail,
     ShorttermMemoryChunk,
 )
-from agent_mem.config.settings import get_config
+from agent_reminiscence.config.settings import get_config
 from unittest.mock import AsyncMock
 
 # Setup logging
@@ -327,3 +327,5 @@ if __name__ == "__main__":
         print(f"\n\n❌ Unexpected error: {e}")
         logger.exception("Unexpected error in test runner")
         sys.exit(1)
+
+

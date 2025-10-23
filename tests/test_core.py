@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 from datetime import datetime, timezone
 
-from agent_mem.core import AgentMem
-from agent_mem.database.models import ActiveMemory
+from agent_reminiscence.core import AgentMem
+from agent_reminiscence.database.models import ActiveMemory
 
 
 class TestAgentMemInit:
@@ -17,7 +17,7 @@ class TestAgentMemInit:
     @pytest.mark.asyncio
     async def test_initialization_with_config(self, test_config):
         """Test initialization with config."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             mock_mm_instance = MagicMock()
             mock_mm_instance.initialize = AsyncMock()
@@ -33,8 +33,8 @@ class TestAgentMemInit:
     async def test_initialization_without_config(self):
         """Test initialization without config uses defaults."""
         with (
-            patch("agent_mem.core.MemoryManager") as mock_mm,
-            patch("agent_mem.core.get_config") as mock_get_config,
+            patch("agent_reminiscence.core.MemoryManager") as mock_mm,
+            patch("agent_reminiscence.core.get_config") as mock_get_config,
         ):
 
             mock_config = MagicMock()
@@ -56,7 +56,7 @@ class TestAgentMemContextManager:
     @pytest.mark.asyncio
     async def test_context_manager(self, test_config):
         """Test using AgentMem as async context manager."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             mock_mm_instance = MagicMock()
             mock_mm_instance.initialize = AsyncMock()
@@ -76,7 +76,7 @@ class TestAgentMemActiveMemory:
     @pytest.mark.asyncio
     async def test_create_active_memory(self, test_config):
         """Test creating active memory with dict template."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory = ActiveMemory(
                 id=1,
@@ -131,7 +131,7 @@ class TestAgentMemActiveMemory:
     @pytest.mark.asyncio
     async def test_get_active_memories(self, test_config):
         """Test getting active memories."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memories = [
                 ActiveMemory(
@@ -192,7 +192,7 @@ class TestAgentMemActiveMemory:
     @pytest.mark.asyncio
     async def test_update_active_memory(self, test_config):
         """Test updating active memory."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory_id = 1
             updated_memory = ActiveMemory(
@@ -236,7 +236,7 @@ class TestAgentMemActiveMemory:
     @pytest.mark.asyncio
     async def test_create_active_memory_yaml_backward_compatibility(self, test_config):
         """Test creating active memory with YAML string (backward compatibility)."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory = ActiveMemory(
                 id=1,
@@ -302,7 +302,7 @@ sections:
     @pytest.mark.asyncio
     async def test_update_active_memory_sections_upsert(self, test_config):
         """Test upserting active memory sections with new schema."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory_id = 1
             updated_memory = ActiveMemory(
@@ -371,7 +371,7 @@ sections:
     @pytest.mark.asyncio
     async def test_update_active_memory_sections_insert_action(self, test_config):
         """Test inserting content into active memory sections."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory_id = 1
             updated_memory = ActiveMemory(
@@ -427,9 +427,9 @@ class TestAgentMemRetrieval:
     @pytest.mark.asyncio
     async def test_retrieve_memories(self, test_config):
         """Test retrieving memories."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
-            from agent_mem.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResult
 
             result_obj = RetrievalResult(
                 mode="synthesis",
@@ -464,9 +464,9 @@ class TestAgentMemRetrieval:
     @pytest.mark.asyncio
     async def test_retrieve_memories_with_filters(self, test_config):
         """Test retrieving memories with search parameters."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
-            from agent_mem.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResult
 
             result_obj = RetrievalResult(
                 mode="synthesis",
@@ -503,7 +503,7 @@ class TestUpsertFunctionality:
     @pytest.mark.asyncio
     async def test_upsert_active_memory_sections_replace(self, test_config):
         """Test upserting active memory sections with replace action."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory_id = 1
             updated_memory = ActiveMemory(
@@ -554,7 +554,7 @@ class TestUpsertFunctionality:
     @pytest.mark.asyncio
     async def test_upsert_active_memory_sections_insert(self, test_config):
         """Test upserting active memory sections with insert action."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             memory_id = 1
             updated_memory = ActiveMemory(
@@ -618,7 +618,7 @@ class TestAgentMemErrorHandling:
     @pytest.mark.asyncio
     async def test_error_on_uninitialized_operation(self, test_config):
         """Test error when performing operations before initialization."""
-        with patch("agent_mem.core.MemoryManager"):
+        with patch("agent_reminiscence.core.MemoryManager"):
 
             agent_mem = AgentMem(config=test_config)
             # AgentMem should handle uninitialized state
@@ -627,7 +627,7 @@ class TestAgentMemErrorHandling:
     @pytest.mark.asyncio
     async def test_close_without_initialize(self, test_config):
         """Test closing without initializing."""
-        with patch("agent_mem.core.MemoryManager") as mock_mm:
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
             mock_mm_instance = MagicMock()
             mock_mm_instance.close = AsyncMock()
@@ -638,3 +638,5 @@ class TestAgentMemErrorHandling:
 
             # Should not raise error
             assert True
+
+

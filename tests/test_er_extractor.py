@@ -11,7 +11,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.messages import ModelResponse, TextPart
 
-from agent_mem.agents.er_extractor import (
+from agent_reminiscence.agents.er_extractor import (
     extract_entities_and_relationships,
     get_er_extractor_agent,
     ExtractedEntity,
@@ -597,7 +597,7 @@ def print_manual_test_scenario():
     1. Run basic extraction:
         ```python
         import asyncio
-        from agent_mem.agents.er_extractor import extract_entities_and_relationships
+        from agent_reminiscence.agents.er_extractor import extract_entities_and_relationships
         
         async def test():
             text = '''
@@ -636,3 +636,5 @@ def print_manual_test_scenario():
 
 if __name__ == "__main__":
     print_manual_test_scenario()
+
+

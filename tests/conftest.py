@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
-from agent_mem.config.settings import Config
-from agent_mem.database.postgres_manager import PostgreSQLManager
-from agent_mem.database.neo4j_manager import Neo4jManager
-from agent_mem.database.repositories.active_memory import ActiveMemoryRepository
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
-from agent_mem.database.repositories.longterm_memory import LongtermMemoryRepository
-from agent_mem.services.embedding import EmbeddingService
-from agent_mem.services.memory_manager import MemoryManager
+from agent_reminiscence.config.settings import Config
+from agent_reminiscence.database.postgres_manager import PostgreSQLManager
+from agent_reminiscence.database.neo4j_manager import Neo4jManager
+from agent_reminiscence.database.repositories.active_memory import ActiveMemoryRepository
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_reminiscence.database.repositories.longterm_memory import LongtermMemoryRepository
+from agent_reminiscence.services.embedding import EmbeddingService
+from agent_reminiscence.services.memory_manager import MemoryManager
 
 
 # ============================================================================
@@ -221,7 +221,7 @@ async def memory_manager(
 @pytest.fixture
 def mock_memory_manager() -> MagicMock:
     """Create a mock MemoryManager."""
-    from agent_mem.database.models import RetrievalResult
+    from agent_reminiscence.database.models import RetrievalResult
 
     mock = MagicMock(spec=MemoryManager)
     mock.create_active_memory = AsyncMock()
@@ -411,3 +411,5 @@ def mock_memory_retrieve_strategy() -> dict:
         "filters": {},
         "confidence": 0.9,
     }
+
+

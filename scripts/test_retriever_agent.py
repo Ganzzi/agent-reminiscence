@@ -8,17 +8,17 @@ Creates active memories, shortterm chunks/entities, and tests retrieval.
 import asyncio
 import logging
 import uuid
-from agent_mem.config.settings import get_config
-from agent_mem.database.postgres_manager import PostgreSQLManager
-from agent_mem.database.neo4j_manager import Neo4jManager
-from agent_mem.database.repositories import (
+from agent_reminiscence.config.settings import get_config
+from agent_reminiscence.database.postgres_manager import PostgreSQLManager
+from agent_reminiscence.database.neo4j_manager import Neo4jManager
+from agent_reminiscence.database.repositories import (
     ActiveMemoryRepository,
     ShorttermMemoryRepository,
     LongtermMemoryRepository,
 )
-from agent_mem.services.embedding import EmbeddingService
-from agent_mem.agents.memory_retriever import retrieve_memory
-from agent_mem.services.memory_manager import MemoryManager
+from agent_reminiscence.services.embedding import EmbeddingService
+from agent_reminiscence.agents.memory_retriever import retrieve_memory
+from agent_reminiscence.services.memory_manager import MemoryManager
 
 # Setup logging
 logging.basicConfig(
@@ -551,3 +551,5 @@ async def test_retriever_agent():
 
 if __name__ == "__main__":
     asyncio.run(test_retriever_agent())
+
+

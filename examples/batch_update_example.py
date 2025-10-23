@@ -17,8 +17,8 @@ from datetime import datetime
 os.environ["AVG_SECTION_UPDATE_COUNT"] = "5.0"  # Consolidate when avg 5 updates per section
 os.environ["SHORTTERM_UPDATE_THRESHOLD"] = "10"  # Promote after 10 consolidations
 
-from agent_mem import AgentMem
-from agent_mem.config import get_config
+from agent_reminiscence import AgentMem
+from agent_reminiscence.config import get_config
 
 
 async def main():
@@ -262,3 +262,5 @@ No decisions yet
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

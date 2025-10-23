@@ -221,3 +221,5 @@ class Formatters:
             return "N/A"
 
         return str(external_id)
+
+

@@ -16,17 +16,17 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_mem.database.repositories.active_memory import ActiveMemoryRepository
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
-from agent_mem.database.repositories.longterm_memory import LongtermMemoryRepository
-from agent_mem.database.models import (
+from agent_reminiscence.database.repositories.active_memory import ActiveMemoryRepository
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_reminiscence.database.repositories.longterm_memory import LongtermMemoryRepository
+from agent_reminiscence.database.models import (
     ActiveMemory,
     ShorttermMemory,
     ShorttermMemoryChunk,
     LongtermMemoryChunk,
     LongtermEntity,
 )
-from agent_mem.services.memory_manager import MemoryManager
+from agent_reminiscence.services.memory_manager import MemoryManager
 
 
 class TestBatchUpdate:
@@ -789,3 +789,5 @@ class TestAccessPatternsForImportance:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

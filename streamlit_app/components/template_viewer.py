@@ -249,3 +249,5 @@ def render_compact_template_card(template: Dict, key: str):
     # Show preview modal if requested
     if st.session_state.get(f"show_preview_{key}", False):
         render_template_preview_modal(template, key)
+
+

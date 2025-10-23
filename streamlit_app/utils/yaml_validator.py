@@ -217,3 +217,5 @@ class YAMLValidator:
 
         is_valid = syntax_valid and structure_valid
         return is_valid, result
+
+

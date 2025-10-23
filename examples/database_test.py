@@ -4,9 +4,9 @@ Simple test without AI agents - tests core database functionality.
 
 import asyncio
 import logging
-from agent_mem.database import PostgreSQLManager, Neo4jManager
-from agent_mem.services import EmbeddingService
-from agent_mem.config import Config
+from agent_reminiscence.database import PostgreSQLManager, Neo4jManager
+from agent_reminiscence.services import EmbeddingService
+from agent_reminiscence.config import Config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -95,3 +95,5 @@ async def test_database_connections():
 if __name__ == "__main__":
     success = asyncio.run(test_database_connections())
     exit(0 if success else 1)
+
+

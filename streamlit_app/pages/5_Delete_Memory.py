@@ -505,3 +505,5 @@ else:
 # Footer
 st.divider()
 st.caption(f"Delete Memory | {APP_TITLE}")
+
+

@@ -9,13 +9,13 @@ import logging
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import agent_mem
+# Add parent directory to path to import agent_reminiscence
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
-    from agent_mem import AgentMem
-    from agent_mem.database.models import ActiveMemory
-    from agent_mem.config.settings import Config
+    from agent_reminiscence import AgentMem
+    from agent_reminiscence.database.models import ActiveMemory
+    from agent_reminiscence.config.settings import Config
 except ImportError as e:
     logging.error(f"Failed to import AgentMem: {e}")
     AgentMem = None

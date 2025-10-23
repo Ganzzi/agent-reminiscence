@@ -16,10 +16,10 @@ import pytest
 # Add parent directory to path to import modules directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_mem.config import Config
-from agent_mem.database.postgres_manager import PostgreSQLManager
-from agent_mem.database.neo4j_manager import Neo4jManager
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_reminiscence.config import Config
+from agent_reminiscence.database.postgres_manager import PostgreSQLManager
+from agent_reminiscence.database.neo4j_manager import Neo4jManager
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepository
 
 # Configure logging
 logging.basicConfig(
@@ -595,3 +595,5 @@ if __name__ == "__main__":
             await neo4j.close()
 
     asyncio.run(run_tests())
+
+

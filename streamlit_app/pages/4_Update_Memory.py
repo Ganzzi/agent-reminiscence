@@ -586,3 +586,5 @@ else:
 # Footer
 st.divider()
 st.caption(f"Update Memory | {APP_TITLE}")
+
+

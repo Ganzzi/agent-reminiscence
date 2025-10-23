@@ -15,7 +15,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.messages import ModelResponse, TextPart
 
-from agent_mem.agents.memorizer import (
+from agent_reminiscence.agents.memorizer import (
     format_conflicts_as_text,
     MemorizerDeps,
     ConflictResolution,
@@ -25,7 +25,7 @@ from agent_mem.agents.memorizer import (
     EntityUpdateAction,
     RelationshipUpdateAction,
 )
-from agent_mem.database.models import (
+from agent_reminiscence.database.models import (
     ConsolidationConflicts,
     ConflictSection,
     ConflictEntityDetail,
@@ -34,7 +34,7 @@ from agent_mem.database.models import (
     ShorttermEntity,
     ShorttermRelationship,
 )
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepository
 
 
 # =========================================================================
@@ -505,7 +505,7 @@ def test_conflict_resolution_empty():
 
 def test_conflict_resolution_with_actions():
     """Test creating conflict resolution with actions."""
-    from agent_mem.agents.memorizer import (
+    from agent_reminiscence.agents.memorizer import (
         ChunkUpdateAction,
         EntityUpdateAction,
         RelationshipUpdateAction,
@@ -847,8 +847,8 @@ def print_manual_test_scenario():
         ```python
         import asyncio
         from datetime import datetime, timezone
-        from agent_mem.database.models import ConsolidationConflicts, ConflictSection
-        from agent_mem.agents.memorizer import resolve_conflicts
+        from agent_reminiscence.database.models import ConsolidationConflicts, ConflictSection
+        from agent_reminiscence.agents.memorizer import resolve_conflicts
         
         async def main():
             # Create your real shortterm_repo instance here
@@ -895,3 +895,5 @@ def print_manual_test_scenario():
 
 if __name__ == "__main__":
     print_manual_test_scenario()
+
+

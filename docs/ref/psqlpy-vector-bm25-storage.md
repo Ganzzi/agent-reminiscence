@@ -4,7 +4,7 @@
 
 ## Overview
 
-This guide focuses specifically on using PSQLPy for vector embeddings (pgvector) and BM25 full-text search in the agent_mem package. It covers practical patterns directly from the codebase.
+This guide focuses specifically on using PSQLPy for vector embeddings (pgvector) and BM25 full-text search in the agent_reminiscence package. It covers practical patterns directly from the codebase.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ This guide focuses specifically on using PSQLPy for vector embeddings (pgvector)
 
 ### Table Schema
 
-From `agent_mem/sql/schema.sql`:
+From `agent_reminiscence/sql/schema.sql`:
 
 ```sql
 -- Shortterm memory chunks with vector embeddings
@@ -400,10 +400,10 @@ results = await repo.hybrid_search(
 ### Example 1: Complete Workflow - Creating Memory with Search
 
 ```python
-from agent_mem.database.postgres_manager import PostgreSQLManager
-from agent_mem.database.neo4j_manager import Neo4jManager
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
-from agent_mem.config import get_config
+from agent_reminiscence.database.postgres_manager import PostgreSQLManager
+from agent_reminiscence.database.neo4j_manager import Neo4jManager
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_reminiscence.config import get_config
 
 # Initialize (once at startup)
 config = get_config()
@@ -841,11 +841,11 @@ await conn.execute("SELECT * FROM users WHERE id = $1", [user_id])
 
 - **Complete PSQLPy Guide:** [psqlpy-complete-guide.md](./psqlpy-complete-guide.md) - Full guide with setup, configuration, and advanced topics
 - **Source Code:**
-  - `agent_mem/database/postgres_manager.py` - Manager implementation
-  - `agent_mem/database/repositories/shortterm_memory.py` - Repository with all search methods
-  - `agent_mem/database/init_databases.py` - Database initialization script
-  - `agent_mem/sql/schema.sql` - Complete database schema with triggers
-  - `agent_mem/config/settings.py` - Configuration management
+  - `agent_reminiscence/database/postgres_manager.py` - Manager implementation
+  - `agent_reminiscence/database/repositories/shortterm_memory.py` - Repository with all search methods
+  - `agent_reminiscence/database/init_databases.py` - Database initialization script
+  - `agent_reminiscence/sql/schema.sql` - Complete database schema with triggers
+  - `agent_reminiscence/config/settings.py` - Configuration management
 
 - **PostgreSQL Extensions:**
   - [pgvector GitHub](https://github.com/pgvector/pgvector) - Vector similarity search
@@ -861,7 +861,7 @@ await conn.execute("SELECT * FROM users WHERE id = $1", [user_id])
 
 
 
-This guide focuses specifically on using PSQLPy for vector embeddings (pgvector) and BM25 full-text search in the agent_mem package. It covers practical patterns used in the codebase.**Key Features of PSQLPy:**
+This guide focuses specifically on using PSQLPy for vector embeddings (pgvector) and BM25 full-text search in the agent_reminiscence package. It covers practical patterns used in the codebase.**Key Features of PSQLPy:**
 
 - Fully async/await support (asyncio)
 
@@ -1595,11 +1595,11 @@ Combine vector similarity and BM25 for better search results:
 
 ```python
 
-from agent_mem.database.postgres_manager import PostgreSQLManager```python
+from agent_reminiscence.database.postgres_manager import PostgreSQLManager```python
 
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepositoryasync def hybrid_search(
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepositoryasync def hybrid_search(
 
-from agent_mem.config import get_config    query_text: str,
+from agent_reminiscence.config import get_config    query_text: str,
 
     query_embedding: List[float],
 
@@ -1980,7 +1980,7 @@ pg_vector = PgVector(embedding)
 ### Error: "column content_bm25 does not exist"```python
 
 ```python
-from agent_mem.config import get_config
+from agent_reminiscence.config import get_config
 
 config = get_config()
 
@@ -2056,13 +2056,13 @@ SELECT create_tokenizer('bert', $$ model = "bert_base_uncased" $$);             
 
 - **Source Code:**    return chunk_ids
 
-  - `agent_mem/database/postgres_manager.py` - Manager implementation```
+  - `agent_reminiscence/database/postgres_manager.py` - Manager implementation```
 
-  - `agent_mem/database/repositories/shortterm_memory.py` - Repository with search
+  - `agent_reminiscence/database/repositories/shortterm_memory.py` - Repository with search
 
-  - `agent_mem/database/init_databases.py` - Schema initialization### 3. Index Maintenance
+  - `agent_reminiscence/database/init_databases.py` - Schema initialization### 3. Index Maintenance
 
-  - `agent_mem/sql/schema.sql` - Complete database schema
+  - `agent_reminiscence/sql/schema.sql` - Complete database schema
 
 Rebuild indexes periodically for optimal performance:
 
@@ -2154,3 +2154,4 @@ For more examples, refer to:
 - `database/memories/shortterm_memory_repository.py`
 - `database/memories/longterm_memory_repository.py`
 - `database/sql_schema/memories.sql`
+

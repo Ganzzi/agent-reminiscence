@@ -278,7 +278,7 @@ class MemoryRetrieveAgent:
 ```
 ┌──────────────────────────────────────────────────────┐
 │ 1. User creates active memory                        │
-│    agent_mem.create_active_memory(...)               │
+│    agent_reminiscence.create_active_memory(...)               │
 └─────────────────┬────────────────────────────────────┘
                   │
                   ↓
@@ -290,7 +290,7 @@ class MemoryRetrieveAgent:
                   ↓
 ┌──────────────────────────────────────────────────────┐
 │ 3. User updates memory multiple times                │
-│    agent_mem.update_active_memory(...)               │
+│    agent_reminiscence.update_active_memory(...)               │
 │    Update count increments                           │
 └─────────────────┬────────────────────────────────────┘
                   │
@@ -330,7 +330,7 @@ class MemoryRetrieveAgent:
 ```
 ┌──────────────────────────────────────────────────────┐
 │ 1. User requests information                         │
-│    result = agent_mem.retrieve_memories(query)       │
+│    result = agent_reminiscence.retrieve_memories(query)       │
 └─────────────────┬────────────────────────────────────┘
                   │
                   ↓
@@ -565,7 +565,7 @@ FOR (e:LongtermEntity) REQUIRE e.id IS UNIQUE;
 ### Custom Embedding Models
 
 ```python
-from agent_mem.services import EmbeddingService
+from agent_reminiscence.services import EmbeddingService
 
 class CustomEmbeddingService(EmbeddingService):
     async def get_embedding(self, text: str) -> List[float]:
@@ -654,7 +654,7 @@ services:
   postgres:
     image: ankane/pgvector:latest
     environment:
-      POSTGRES_DB: agent_mem
+      POSTGRES_DB: agent_reminiscence
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
@@ -695,3 +695,4 @@ Run SQL and Cypher scripts to initialize schema.
 ## Summary
 
 Agent Mem provides a clean, simple API backed by sophisticated memory management. The architecture separates concerns clearly, uses appropriate technologies for each task, and provides intelligent automation through Pydantic AI agents. The design is extensible, performant, and production-ready.
+

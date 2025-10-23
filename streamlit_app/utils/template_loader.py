@@ -180,3 +180,5 @@ class TemplateLoader:
         """Clear the template cache"""
         self._cache.clear()
         logger.info("Template cache cleared")
+
+

@@ -3,19 +3,25 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-mem"
-version = "0.1.0"
+name = "agent-reminiscence"
+version = "0.1.1"
 description = "Hierarchical memory management for AI agents with vector search and graph relationships"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
-authors = [
-    {name = "Agent Mem Contributors"}
+license = { text = "MIT" }
+authors = [{ name = "Agent Reminiscence Contributors" }]
+maintainers = [{ name = "Agent Reminiscence Contributors" }]
+keywords = [
+    "ai",
+    "memory",
+    "agents",
+    "vector-search",
+    "graph",
+    "pydantic-ai",
+    "llm",
+    "rag",
+    "knowledge-graph",
 ]
-maintainers = [
-    {name = "Agent Mem Contributors"}
-]
-keywords = ["ai", "memory", "agents", "vector-search", "graph", "pydantic-ai", "llm", "rag", "knowledge-graph"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -51,9 +57,7 @@ dev = [
     "python-dotenv>=1.0.0",
 ]
 
-mcp = [
-    "mcp[cli]>=1.0.0",
-]
+mcp = ["mcp[cli]>=1.0.0"]
 
 docs = [
     "mkdocs>=1.5.0",
@@ -61,19 +65,19 @@ docs = [
     "mkdocstrings[python]>=0.24.0",
 ]
 
-# Note: MCP server is located at agent_mem_mcp/ (root level, outside package)
-# Run directly with: py -m agent_mem_mcp or py agent_mem_mcp/run.py
+# Note: MCP server is located at agent_reminiscence_mcp/ (root level, outside package)
+# Run directly with: py -m agent_reminiscence_mcp or py agent_reminiscence_mcp/run.py
 
 [project.urls]
-Homepage = "https://github.com/Ganzzi/agent-mem"
-Documentation = "https://github.com/Ganzzi/agent-mem/tree/main/docs"
-Repository = "https://github.com/Ganzzi/agent-mem"
-Issues = "https://github.com/Ganzzi/agent-mem/issues"
-Changelog = "https://github.com/Ganzzi/agent-mem/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Ganzzi/agent-reminiscence"
+Documentation = "https://github.com/Ganzzi/agent-reminiscence/tree/main/docs"
+Repository = "https://github.com/Ganzzi/agent-reminiscence"
+Issues = "https://github.com/Ganzzi/agent-reminiscence/issues"
+Changelog = "https://github.com/Ganzzi/agent-reminiscence/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_mem*"]
+include = ["agent_reminiscence*"]
 exclude = ["tests*", "docs*", "examples*"]
 
 [tool.black]
@@ -96,4 +100,4 @@ disallow_incomplete_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-v --cov=agent_mem --cov-report=term-missing"
+addopts = "-v --cov=agent_reminiscence --cov-report=term-missing"

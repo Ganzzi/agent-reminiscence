@@ -4,8 +4,8 @@ Tests for PostgreSQL manager (database/postgres_manager.py).
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_mem.config.settings import Config
-from agent_mem.database.postgres_manager import PostgreSQLManager
+from agent_reminiscence.config.settings import Config
+from agent_reminiscence.database.postgres_manager import PostgreSQLManager
 
 
 class TestPostgreSQLManager:
@@ -24,7 +24,7 @@ class TestPostgreSQLManager:
         """Test that initialize creates connection pool."""
         manager = PostgreSQLManager(test_config)
 
-        with patch("agent_mem.database.postgres_manager.ConnectionPool") as mock_pool:
+        with patch("agent_reminiscence.database.postgres_manager.ConnectionPool") as mock_pool:
             mock_instance = MagicMock()
             mock_pool.return_value = mock_instance
 
@@ -113,7 +113,7 @@ class TestPostgreSQLManager:
     @pytest.mark.asyncio
     async def test_context_manager(self, test_config: Config):
         """Test using PostgreSQLManager as context manager."""
-        with patch("agent_mem.database.postgres_manager.ConnectionPool") as mock_pool:
+        with patch("agent_reminiscence.database.postgres_manager.ConnectionPool") as mock_pool:
             mock_instance = MagicMock()
             mock_instance.close = MagicMock()
             mock_pool.return_value = mock_instance
@@ -157,3 +157,5 @@ class TestPostgreSQLManager:
         
         assert result is True
         mock_connection.execute.assert_called_once_with("SELECT 1")
+
+

@@ -1,8 +1,8 @@
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from agent_mem.database.repositories.shortterm_memory import ShorttermMemoryRepository
-from agent_mem.database.models import (
+from agent_reminiscence.database.repositories.shortterm_memory import ShorttermMemoryRepository
+from agent_reminiscence.database.models import (
     ShorttermMemory,
     ShorttermMemoryChunk,
     ShorttermEntityRelationshipSearchResult,
@@ -529,3 +529,5 @@ class TestShorttermMemoryRepository:
         assert params[-3] == 2  # shortterm_memory_id
         assert params[-2] == 0.8  # min_similarity_score
         assert params[-1] == 0.7  # min_bm25_score
+
+
