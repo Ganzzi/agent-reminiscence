@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-reminiscence"
-version = "0.1.1"
+version = "0.1.2"
 description = "Hierarchical memory management for AI agents with vector search and graph relationships"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -101,3 +101,6 @@ disallow_incomplete_defs = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-v --cov=agent_reminiscence --cov-report=term-missing"
+
+[dependency-groups]
+dev = ["coverage>=7.10.7", "iniconfig>=2.1.0", "streamlit>=1.50.0"]

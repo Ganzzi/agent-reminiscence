@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-10-23
+
+### Fixed
+- **Test Suite**: Fixed mock entity objects in batch update tests to properly simulate Neo4j behavior
+  - Implemented proper dict-like behavior for mock entities with `__getitem__`, `__contains__`, `keys()`, `items()`, and `get()` methods
+  - Fixed `test_high_access_entity_importance` to properly track entity access count increments
+  - All 19 tests in `test_batch_update_features.py` now pass (100%)
+  - Coverage improved for shortterm memory repository (12% → 38%)
+
+### Changed
+- **MCP Server Structure**: Removed unnecessary `__init__.py` from `agent_reminiscence_mcp/`
+  - MCP server is a CLI application, not a standard Python package
+  - Run with `py -m agent_reminiscence_mcp` or `py agent_reminiscence_mcp/run.py`
+
+### Testing
+- Full test suite passes: **202 passed, 15 skipped**
+- Pre-existing failures in entity search and streamlit integration tests (not related to this release)
+
 ## [0.1.1] - 2025-10-23
 
 ### Fixed

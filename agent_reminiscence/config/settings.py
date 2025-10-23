@@ -120,6 +120,10 @@ class Config(BaseModel):
         default_factory=lambda: float(os.getenv("AVG_SECTION_UPDATE_COUNT", "3.0")),
         description="Average update count per section before consolidation trigger",
     )
+    consolidation_threshold: int = Field(
+        default_factory=lambda: int(os.getenv("ACTIVE_MEMORY_UPDATE_THRESHOLD", "5")),
+        description="Consolidation threshold for active memory updates",
+    )
     shortterm_update_count_threshold: int = Field(
         default_factory=lambda: int(os.getenv("SHORTTERM_UPDATE_THRESHOLD", "10")),
         description="Number of shortterm memory updates before longterm promotion",

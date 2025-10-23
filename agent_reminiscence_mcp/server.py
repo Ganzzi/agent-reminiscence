@@ -25,6 +25,15 @@ from .schemas import (
     DELETE_ACTIVE_MEMORY_INPUT_SCHEMA,
 )
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -233,7 +242,7 @@ async def _handle_get_active_memories(
 
     import json
 
-    return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+    return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
 
 
 async def _handle_update_memory_sections(
@@ -258,10 +267,13 @@ async def _handle_update_memory_sections(
     if not current_memory:
         raise ValueError(f"Memory {memory_id} not found for agent {external_id}")
 
-    # Validate section updates (sections can now be created if they don't exist)
+    # Validate section updates - check that sections exist in current memory
     for section_update in sections:
         section_id = section_update["section_id"]
         new_content = section_update["new_content"]
+
+        if section_id not in current_memory.sections:
+            raise ValueError(f"Section '{section_id}' not found in memory")
 
         if not new_content or not new_content.strip():
             raise ValueError(f"new_content for section '{section_id}' cannot be empty")
@@ -332,7 +344,7 @@ async def _handle_update_memory_sections(
 
     import json
 
-    return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+    return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
 
 
 async def _handle_search_memories(
@@ -412,7 +424,7 @@ async def _handle_search_memories(
 
     import json
 
-    return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+    return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
 
 
 async def _handle_create_active_memory(
@@ -655,7 +667,7 @@ async def _handle_create_active_memory(
             f"Created memory {memory.id} for {external_id} with {len(memory.sections)} sections"
         )
 
-        return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+        return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
 
     except Exception as e:
         logger.error(f"Error creating memory: {e}", exc_info=True)
@@ -702,7 +714,7 @@ async def _handle_delete_active_memory(
             }
             logger.warning(f"Failed to delete memory {memory_id} for {external_id}")
 
-        return [types.TextContent(type="text", text=json.dumps(response, indent=2))]
+        return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
 
     except Exception as e:
         logger.error(f"Error deleting memory: {e}", exc_info=True)

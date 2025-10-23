@@ -30,7 +30,10 @@ class TestActiveMemory:
             id=1,
             external_id="test-123",
             title="Test Memory",
-            template_content="# Template",
+            template_content={
+                "template": {"id": "test", "name": "Test"},
+                "sections": [{"id": "summary", "description": "Test summary"}]
+            },
             sections={"summary": {"content": "Test summary", "update_count": 0}},
             metadata={"key": "value"},
             created_at=now,
@@ -38,7 +41,7 @@ class TestActiveMemory:
         )
         assert memory.external_id == "test-123"
         assert memory.title == "Test Memory"
-        assert memory.template_content == "# Template"
+        assert memory.template_content["template"]["id"] == "test"
         assert memory.sections == {"summary": {"content": "Test summary", "update_count": 0}}
         assert memory.metadata == {"key": "value"}
         assert isinstance(memory.created_at, datetime)
@@ -58,7 +61,7 @@ class TestActiveMemory:
             id=1,
             external_id="test-123",
             title="Test",
-            template_content="# Test",
+            template_content={"template": {"id": "test", "name": "Test"}},
             created_at=now,
             updated_at=now,
         )

@@ -31,7 +31,9 @@ class TestEndToEndWorkflow:
         ):
 
             # Setup mock memory manager with AsyncMock for async methods
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
+            mock_mm_instance.initialize = AsyncMock()
+            mock_mm_instance.close = AsyncMock()
             mock_mm_instance.initialize = AsyncMock()
             mock_mm_instance.close = AsyncMock()
 
@@ -89,7 +91,7 @@ class TestEndToEndWorkflow:
                 )
                 updates.append(updated)
 
-            mock_mm_instance.update_active_memory_section = AsyncMock(side_effect=updates)
+            mock_mm_instance.update_active_memory_sections = AsyncMock(side_effect=updates)
 
             # Mock retrieve with proper RetrievalResult structure
             from agent_reminiscence.database.models import RetrievalResult
@@ -168,7 +170,7 @@ class TestConsolidationWorkflow:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
 
             # Mock consolidation
             mock_mm_instance._consolidate_to_shortterm = AsyncMock()
@@ -191,7 +193,7 @@ class TestConsolidationWorkflow:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
 
             # Create long content that needs chunking
             long_content = " ".join([f"Sentence {i}" for i in range(100)])
@@ -259,7 +261,7 @@ class TestPromotionWorkflow:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             mock_mm_instance._promote_to_longterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
@@ -277,7 +279,7 @@ class TestPromotionWorkflow:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             # Promotion should update confidence: 0.7 * existing + 0.3 * new
             mock_mm_instance._promote_to_longterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
@@ -313,7 +315,7 @@ class TestCrossTierSearch:
                 metadata={},
             )
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
@@ -348,7 +350,7 @@ class TestCrossTierSearch:
                 metadata={},
             )
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
@@ -374,7 +376,7 @@ class TestEntityRelationshipPersistence:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             mock_mm_instance.create_active_memory = AsyncMock()
             mock_mm_instance._consolidate_to_shortterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
@@ -383,8 +385,12 @@ class TestEntityRelationshipPersistence:
                 # Create memory with entity-rich content
                 await agent_mem.create_active_memory(
                     external_id="test-entities",
-                    memory_type="conversation",
-                    sections={"summary": "Discussion about Python and Machine Learning"},
+                    title="Entity Discussion",
+                    template_content={
+                        "template": {"id": "test", "name": "Test"},
+                        "sections": [{"id": "summary", "description": "Discussion summary"}]
+                    },
+                    initial_sections={"summary": {"content": "Discussion about Python and Machine Learning"}},
                 )
 
                 # Consolidation should extract entities
@@ -399,7 +405,7 @@ class TestEntityRelationshipPersistence:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             mock_mm_instance._consolidate_to_shortterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
@@ -417,7 +423,7 @@ class TestEntityRelationshipPersistence:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             # Auto-resolution should merge entities with:
             # - semantic similarity >= 0.85
             # - entity overlap >= 0.7
@@ -456,7 +462,7 @@ class TestErrorRecovery:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             # Consolidation fails but doesn't break the system
             mock_mm_instance._consolidate_to_shortterm = AsyncMock(
                 side_effect=Exception("Consolidation error")
@@ -478,7 +484,7 @@ class TestErrorRecovery:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             # Embedding service should return zero vector on failure
             mock_mm_instance.create_active_memory = AsyncMock()
             mock_mm.return_value = mock_mm_instance
@@ -487,8 +493,12 @@ class TestErrorRecovery:
                 # Should work with fallback embeddings
                 await agent_mem.create_active_memory(
                     external_id="test-fallback",
-                    memory_type="conversation",
-                    sections={"summary": "Test"},
+                    title="Fallback Test",
+                    template_content={
+                        "template": {"id": "test", "name": "Test"},
+                        "sections": [{"id": "summary", "description": "Test summary"}]
+                    },
+                    initial_sections={"summary": {"content": "Test"}},
                 )
 
 
@@ -505,7 +515,7 @@ class TestPerformanceCharacteristics:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             mock_mm_instance.create_active_memory = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
@@ -514,8 +524,12 @@ class TestPerformanceCharacteristics:
                 for i in range(100):
                     await agent_mem.create_active_memory(
                         external_id=f"batch-{i}",
-                        memory_type="conversation",
-                        sections={"summary": f"Memory {i}"},
+                        title=f"Memory {i}",
+                        template_content={
+                            "template": {"id": "test", "name": "Test"},
+                            "sections": [{"id": "summary", "description": "Test summary"}]
+                        },
+                        initial_sections={"summary": {"content": f"Memory {i}"}},
                     )
 
                 assert mock_mm_instance.create_active_memory.call_count == 100
@@ -529,7 +543,7 @@ class TestPerformanceCharacteristics:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            mock_mm_instance = MagicMock()
+            mock_mm_instance = AsyncMock()
             # Return large result set
             large_response = "Summary of 1000+ search results..."
             mock_mm_instance.retrieve_memories = AsyncMock(return_value=large_response)
