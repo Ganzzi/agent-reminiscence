@@ -16,7 +16,7 @@ Track your progress implementing the agent_mem package.
 ## ✅ Phase 1: Core Infrastructure (COMPLETED)
 
 - [x] Package structure and pyproject.toml
-- [x] Configuration system (settings.py, constants.py)
+- [x] Configuration system (settings.py)
 - [x] PostgreSQL connection manager
 - [x] Neo4j connection manager
 - [x] Complete SQL schema with triggers and indexes

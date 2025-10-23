@@ -1,8 +1,45 @@
 # Configuration Guide
 
-Agent Mem can be configured using environment variables or a `Config` object.
+AgentMem supports three configuration methods: Direct Python Configuration, Environment Variables, and .env File Configuration.
 
-## Environment Variables
+## Configuration Patterns
+
+### Pattern 1: Direct Python Configuration (Recommended for PyPI users)
+
+```python
+from agent_mem import AgentMem, Config
+
+config = Config(
+    postgres_host="localhost",
+    postgres_password="secure_password",
+    neo4j_uri="bolt://localhost:7687",
+    neo4j_password="neo4j_password",
+    ollama_base_url="http://localhost:11434",
+    embedding_model="nomic-embed-text",
+    vector_dimension=768
+)
+
+agent_mem = AgentMem(config=config)
+```
+
+### Pattern 2: Environment Variables (Recommended for Docker/K8s)
+
+```bash
+export POSTGRES_HOST=postgres
+export POSTGRES_PASSWORD=secure_pass
+export NEO4J_URI=bolt://neo4j:7687
+export NEO4J_PASSWORD=neo4j_pass
+export OLLAMA_BASE_URL=http://ollama:11434
+python your_app.py
+```
+
+```python
+from agent_mem import AgentMem
+
+agent_mem = AgentMem()  # Uses environment variables
+```
+
+### Pattern 3: .env File Configuration (Convenient for local development)
 
 Create a `.env` file in your project root:
 
@@ -10,7 +47,7 @@ Create a `.env` file in your project root:
 # PostgreSQL Configuration
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USER=agent_mem_user
+POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_password
 POSTGRES_DB=agent_mem
 
@@ -26,41 +63,22 @@ EMBEDDING_MODEL=nomic-embed-text
 VECTOR_DIMENSION=768
 
 # Google Gemini API (for AI agents)
-GEMINI_API_KEY=your_api_key_here
+GOOGLE_API_KEY=your_api_key_here
 
 # Agent Models (Optional)
-MEMORY_UPDATE_AGENT_MODEL=google-gla:gemini-2.0-flash
-MEMORIZER_AGENT_MODEL=google-gla:gemini-2.0-flash
-MEMORY_RETRIEVE_AGENT_MODEL=google-gla:gemini-2.0-flash
-
-# Memory Configuration
-ACTIVE_MEMORY_UPDATE_THRESHOLD=5
-SHORTTERM_PROMOTION_THRESHOLD=0.7
+MEMORY_UPDATE_AGENT_MODEL=google:gemini-2.0-flash
+MEMORIZER_AGENT_MODEL=google:gemini-2.0-flash
+MEMORY_RETRIEVE_AGENT_MODEL=google:gemini-2.0-flash
 ```
-
-## Configuration Object
-
-You can also create a `Config` object programmatically:
 
 ```python
-from agent_mem import AgentMem, Config
+# Automatically loaded if python-dotenv is available
+from agent_mem import AgentMem
 
-config = Config(
-    postgres_host="custom-host",
-    postgres_port=5433,
-    postgres_user="custom_user",
-    postgres_password="custom_password",
-    postgres_db="custom_db",
-    neo4j_uri="bolt://custom-host:7687",
-    neo4j_user="custom_user",
-    neo4j_password="custom_password",
-    ollama_base_url="http://custom-host:11434",
-    embedding_model="custom-model",
-    vector_dimension=1024,
-)
-
-agent_mem = AgentMem(config=config)
+agent_mem = AgentMem()  # Uses .env file
 ```
+
+**Note**: `python-dotenv` is optional. Install with `pip install agent-mem[dev]` for .env file support.
 
 ## Configuration Options
 

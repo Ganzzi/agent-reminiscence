@@ -193,7 +193,44 @@ docker compose ps
    ollama pull nomic-embed-text
    ```
 
-### Environment Setup
+### Configuration
+
+AgentMem supports three configuration methods:
+
+#### Pattern 1: Direct Python (Recommended for PyPI users)
+
+```python
+from agent_mem import AgentMem, Config
+
+config = Config(
+    postgres_host="localhost",
+    postgres_password="secure_password",
+    neo4j_uri="bolt://localhost:7687",
+    neo4j_password="neo4j_password",
+    ollama_base_url="http://localhost:11434"
+)
+
+agent_mem = AgentMem(config=config)
+```
+
+#### Pattern 2: Environment Variables (Recommended for Docker/K8s)
+
+```bash
+export POSTGRES_HOST=postgres
+export POSTGRES_PASSWORD=secure_pass
+export NEO4J_URI=bolt://neo4j:7687
+export NEO4J_PASSWORD=neo4j_pass
+export OLLAMA_BASE_URL=http://ollama:11434
+python your_app.py
+```
+
+```python
+from agent_mem import AgentMem
+
+agent_mem = AgentMem()  # Uses environment variables
+```
+
+#### Pattern 3: .env File (Convenient for local development)
 
 Create a `.env` file:
 
@@ -223,6 +260,15 @@ MEMORY_UPDATE_AGENT_MODEL=google:gemini-2.0-flash
 MEMORIZER_AGENT_MODEL=google:gemini-2.0-flash
 MEMORY_RETRIEVE_AGENT_MODEL=google:gemini-2.0-flash
 ```
+
+```python
+# Automatically loaded if python-dotenv is available
+from agent_mem import AgentMem
+
+agent_mem = AgentMem()  # Uses .env file
+```
+
+**Note**: `python-dotenv` is optional. Install with `pip install agent-mem[dev]` for .env file support.
 
 ### Basic Usage
 
@@ -329,8 +375,7 @@ agent_mem/
 ├── core.py                  # AgentMem main class (STATELESS)
 ├── config/
 │   ├── __init__.py
-│   ├── settings.py          # Configuration management
-│   └── constants.py         # Constants and defaults
+│   └── settings.py          # Configuration management
 ├── database/
 │   ├── __init__.py
 │   ├── postgres_manager.py  # PostgreSQL connection pool

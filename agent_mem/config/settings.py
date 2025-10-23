@@ -1,15 +1,79 @@
-"""Configuration settings for Agent Mem."""
+"""Configuration settings for Agent Mem.
+
+Supports three configuration methods:
+1. Direct Python instantiation (recommended for PyPI installs)
+2. Environment variables (recommended for Docker/Kubernetes)
+3. .env file (convenient for local development only)
+
+The .env file loading is optional and only attempted if python-dotenv is available.
+"""
 
 import os
 from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from dotenv import load_dotenv
 
-load_dotenv()
+# Optional .env loading - only if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    # If python-dotenv is not installed, just use environment variables
+    pass
 
 
 class Config(BaseModel):
-    """Configuration for Agent Mem package."""
+    """Configuration for Agent Mem package.
+
+    This class provides type-safe configuration management and supports three
+    initialization patterns:
+
+    **Pattern 1: Direct Python (Recommended for PyPI users)**
+    ```python
+    from agent_mem import AgentMem, Config
+
+    config = Config(
+        postgres_host="localhost",
+        postgres_password="secure_password",
+        neo4j_uri="bolt://localhost:7687",
+        neo4j_password="neo4j_password",
+        ollama_base_url="http://localhost:11434"
+    )
+
+    agent_mem = AgentMem(config=config)
+    ```
+
+    **Pattern 2: Environment Variables (Recommended for Docker/K8s)**
+    ```bash
+    export POSTGRES_HOST=postgres
+    export POSTGRES_PASSWORD=secure_pass
+    export NEO4J_URI=bolt://neo4j:7687
+    export NEO4J_PASSWORD=neo4j_pass
+    export OLLAMA_BASE_URL=http://ollama:11434
+    python your_app.py
+    ```
+    ```python
+    from agent_mem import AgentMem
+
+    agent_mem = AgentMem()  # Uses environment variables
+    ```
+
+    **Pattern 3: .env File (Convenient for local development)**
+    ```bash
+    # .env (git-ignored)
+    POSTGRES_HOST=localhost
+    POSTGRES_PASSWORD=devpass
+    NEO4J_URI=bolt://localhost:7687
+    NEO4J_PASSWORD=devpass
+    OLLAMA_BASE_URL=http://localhost:11434
+    ```
+    ```python
+    # Automatically loaded if python-dotenv is available
+    from agent_mem import AgentMem
+
+    agent_mem = AgentMem()  # Uses .env file
+    ```
+    """
 
     # PostgreSQL Configuration
     postgres_host: str = Field(default_factory=lambda: os.getenv("POSTGRES_HOST", "localhost"))
@@ -113,12 +177,23 @@ class Config(BaseModel):
         description="Grok API key",
     )
 
-    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Pydantic Configuration
+    model_config = ConfigDict(
+        env_file=".env",  # Optional .env loading - only loaded if file exists
+        env_file_encoding="utf-8",
+        case_sensitive=False,  # Treat env var names case-insensitively
+        extra="ignore",  # Ignore extra fields not defined in Config model
+    )
 
     @field_validator("postgres_password", "neo4j_password")
     @classmethod
     def validate_password(cls, v: str, info) -> str:
-        """Validate that passwords meet minimum security requirements."""
+        """Validate that passwords meet minimum security requirements.
+
+        Only validates if a password is actually provided (non-empty).
+        This allows development with default empty password while requiring
+        secure passwords in production configs.
+        """
         if v and len(v) < 8:
             raise ValueError(
                 f"{info.field_name} must be at least 8 characters long for security. "
@@ -127,12 +202,48 @@ class Config(BaseModel):
         return v
 
 
-# Global config instance
+# Global config instance (for backward compatibility)
+# This is optional - the recommended pattern is to pass Config directly
 _config: Optional[Config] = None
 
 
 def get_config() -> Config:
-    """Get the global configuration instance."""
+    """Get the global configuration instance.
+
+    **Use Case**: Fallback pattern for CLI scripts, services, and tests.
+    This maintains a global singleton for convenience when a Config can't be
+    passed directly through the call stack.
+
+    **Recommended for:**
+    - CLI tools
+    - Service classes that accept optional config parameter
+    - Test scripts that need quick config access
+
+    **NOT Recommended for:**
+    - Main application code - pass Config explicitly instead
+    - Library code - accept Config as parameter
+
+    The returned Config is loaded in this order (first match wins):
+    1. Environment variables (POSTGRES_HOST, etc.)
+    2. .env file (if python-dotenv is available and file exists)
+    3. Default hardcoded values
+
+    Example:
+        ```python
+        # For CLI scripts - OK to use get_config()
+        from agent_mem.config import get_config
+        config = get_config()
+        agent_mem = AgentMem(config)
+
+        # For main app - pass Config explicitly (BETTER)
+        from agent_mem import AgentMem, Config
+        config = Config(postgres_host="localhost", ...)
+        agent_mem = AgentMem(config=config)
+        ```
+
+    Returns:
+        Config object loaded from environment variables, .env file, or defaults
+    """
     global _config
     if _config is None:
         _config = Config()
@@ -140,6 +251,33 @@ def get_config() -> Config:
 
 
 def set_config(config: Config) -> None:
-    """Set the global configuration instance."""
+    """Set the global configuration instance.
+
+    **Use Case**: Mainly for testing or CLI scripts that need to override config.
+
+    Use this to temporarily set a different config for:
+    - Unit tests (mock configurations)
+    - Testing different database connections
+    - CLI tools that load config dynamically
+
+    **NOT Recommended for:**
+    - Production code - pass Config to your classes instead
+    - Library code - accept Config as parameter
+
+    Example:
+        ```python
+        # For testing - OK to use set_config()
+        test_config = Config(postgres_db="test_db", ...)
+        set_config(test_config)
+        config = get_config()  # Returns test_config
+
+        # For production - pass Config directly (BETTER)
+        config = Config(...)
+        agent_mem = AgentMem(config=config)
+        ```
+
+    Args:
+        config: Configuration object to set as global instance
+    """
     global _config
     _config = config

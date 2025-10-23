@@ -1979,13 +1979,14 @@ pg_vector = PgVector(embedding)
 
 ### Error: "column content_bm25 does not exist"```python
 
-```pythonfrom config.constants import VECTOR_DIMENSION
+```python
+from agent_mem.config import get_config
 
-# Problem: Trying to insert into bm25vector column
+config = get_config()
 
 # Ensure embeddings match configured dimension
-
-# Wrong:assert len(embedding) == VECTOR_DIMENSION
+assert len(embedding) == config.vector_dimension
+```
 
 await conn.execute(```
 

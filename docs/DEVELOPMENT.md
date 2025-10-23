@@ -74,8 +74,7 @@ agent_mem/
 ├── core.py                        # AgentMem main class
 ├── config/
 │   ├── __init__.py
-│   ├── settings.py               # Pydantic configuration
-│   └── constants.py              # System constants
+│   └── settings.py               # Pydantic configuration
 ├── database/
 │   ├── __init__.py
 │   ├── models.py                 # Pydantic data models
@@ -110,7 +109,7 @@ agent_mem/
 
 - [x] Package structure and pyproject.toml
 - [x] README.md with quick start guide
-- [x] Configuration system (settings.py, constants.py)
+- [x] Configuration system (settings.py)
 - [x] Core AgentMem class interface
 - [x] Pydantic data models
 - [x] Architecture documentation
