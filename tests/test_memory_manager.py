@@ -55,14 +55,14 @@ class TestMemoryManagerActiveMemory:
                 title="Test",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -77,14 +77,14 @@ class TestMemoryManagerActiveMemory:
                 title="Test",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 initial_sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -114,14 +114,14 @@ class TestMemoryManagerActiveMemory:
                     title="Test 1",
                     template_content={
                         "template": {"id": "test-template", "name": "Test Template"},
-                        "sections": [{"id": "summary", "description": "Summary section"}]
+                        "sections": [{"id": "summary", "description": "Summary section"}],
                     },
                     sections={
                         "summary": {
-                            "content": "Test 1", 
+                            "content": "Test 1",
                             "update_count": 0,
                             "awake_update_count": 0,
-                            "last_updated": None
+                            "last_updated": None,
                         }
                     },
                     metadata={},
@@ -164,14 +164,14 @@ class TestMemoryManagerActiveMemory:
                 title="Test",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Updated", 
+                        "content": "Updated",
                         "update_count": 2,
                         "awake_update_count": 2,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     }
                 },
                 metadata={},
@@ -185,11 +185,7 @@ class TestMemoryManagerActiveMemory:
             result = await manager.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                sections=[{
-                    "section_id": "summary", 
-                    "new_content": "Updated",
-                    "action": "replace"
-                }],
+                sections=[{"section_id": "summary", "new_content": "Updated", "action": "replace"}],
             )
 
             assert result == updated_memory
@@ -222,21 +218,21 @@ class TestMemoryManagerActiveMemory:
                     "template": {"id": "test-template", "name": "Test Template"},
                     "sections": [
                         {"id": "summary", "description": "Summary section"},
-                        {"id": "context", "description": "Context section"}
-                    ]
+                        {"id": "context", "description": "Context section"},
+                    ],
                 },
                 sections={
                     "summary": {
-                        "content": "Updated", 
+                        "content": "Updated",
                         "update_count": 3,
                         "awake_update_count": 3,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     },
                     "context": {
-                        "content": "Context", 
+                        "content": "Context",
                         "update_count": 3,
                         "awake_update_count": 3,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     },
                 },
                 metadata={},
@@ -286,21 +282,21 @@ class TestMemoryManagerActiveMemory:
                     "template": {"id": "test-template", "name": "Test Template"},
                     "sections": [
                         {"id": "summary", "description": "Summary section"},
-                        {"id": "context", "description": "Context section"}
-                    ]
+                        {"id": "context", "description": "Context section"},
+                    ],
                 },
                 sections={
                     "summary": {
-                        "content": "Updated", 
+                        "content": "Updated",
                         "update_count": 2,
                         "awake_update_count": 2,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     },
                     "context": {
-                        "content": "Context", 
+                        "content": "Context",
                         "update_count": 2,
                         "awake_update_count": 2,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     },
                 },
                 metadata={},
@@ -342,14 +338,14 @@ class TestMemoryManagerActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -419,14 +415,14 @@ class TestMemoryManagerActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -467,14 +463,14 @@ class TestMemoryManagerActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -622,8 +618,8 @@ class TestMemoryManagerRetrieval:
     """Test memory retrieval."""
 
     @pytest.mark.asyncio
-    async def test_retrieve_memories_basic(self, test_config):
-        """Test basic memory retrieval."""
+    async def test_deep_search_memories(self, test_config):
+        """Test deep memory search with synthesis."""
         with (
             patch("agent_reminiscence.services.memory_manager.PostgreSQLManager"),
             patch("agent_reminiscence.services.memory_manager.Neo4jManager"),
@@ -631,7 +627,7 @@ class TestMemoryManagerRetrieval:
             patch("agent_reminiscence.services.memory_manager.retrieve_memory") as mock_retrieve,
         ):
 
-            from agent_reminiscence.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResultV2
 
             manager = MemoryManager(test_config)
             manager._initialized = True  # Bypass initialization check
@@ -642,12 +638,13 @@ class TestMemoryManagerRetrieval:
             manager.longterm_repo = MagicMock()
             manager.embedding_service = MagicMock()
 
-            # Mock retrieve_memory function to return a RetrievalResult
-            mock_result = RetrievalResult(
-                mode="pointer",
-                chunks=[],
-                entities=[],
-                relationships=[],
+            # Mock retrieve_memory function to return a RetrievalResultV2
+            mock_result = RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
                 synthesis=None,
                 search_strategy="Test search strategy",
                 confidence=0.9,
@@ -655,10 +652,10 @@ class TestMemoryManagerRetrieval:
             )
             mock_retrieve.return_value = mock_result
 
-            result = await manager.retrieve_memories(query="test query", external_id="test-123")
+            result = await manager.deep_search_memories(query="test query", external_id="test-123")
 
-            assert isinstance(result, RetrievalResult)
-            assert result.mode == "pointer"
+            assert isinstance(result, RetrievalResultV2)
+            assert result.mode == "deep_search"
             assert result.search_strategy == "Test search strategy"
             assert result.confidence == 0.9
             mock_retrieve.assert_called_once()
@@ -706,5 +703,3 @@ class TestMemoryManagerHelpers:
 
             # 0.9 * 1.2 = 1.08, but should be capped at 1.0
             assert importance == 1.0
-
-

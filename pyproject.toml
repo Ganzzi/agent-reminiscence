@@ -77,7 +77,7 @@ Changelog = "https://github.com/Ganzzi/agent-reminiscence/blob/main/CHANGELOG.md
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_reminiscence*"]
+include = ["agent_reminiscence"]
 exclude = ["tests*", "docs*", "examples*"]
 
 [tool.black]

@@ -7,8 +7,30 @@ Agent Mem is a standalone Python package providing hierarchical memory managemen
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      AGENT MEM API                          │
+┌──────────────────────────────────────────────────────────────┐
+│                    CLAUDE DESKTOP (v0.2.0+)                 │
+│              via Model Context Protocol (MCP)                │
+└─────────────────────────────┬─────────────────────────────────┘
+                              │
+                              ↓
+┌──────────────────────────────────────────────────────────────┐
+│                    MCP SERVER LAYER (v0.2.0+)                │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  MCP Tools (6 total)                                   │  │
+│  │  - get_active_memories                                 │  │
+│  │  - create_active_memory                                │  │
+│  │  - update_memory_sections                              │  │
+│  │  - delete_active_memory                                │  │
+│  │  - search_memories (fast)                              │  │
+│  │  - deep_search_memories ⭐ NEW (synthesis)             │  │
+│  └────────────────────┬─────────────────────────────────┘  │
+│                       │                                      │
+└───────────────────────┼──────────────────────────────────────┘
+                        │
+                        ↓
+┌──────────────────────────────────────────────────────────────┐
+│                      AGENT MEM API                           │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │  AgentMem (core.py)                                  │  │
@@ -16,6 +38,8 @@ Agent Mem is a standalone Python package providing hierarchical memory managemen
 │  │  - get_active_memories()                             │  │
 │  │  - update_active_memory()                            │  │
 │  │  - retrieve_memories()                               │  │
+│  │  - search_memories() ⭐ NEW                           │  │
+│  │  - deep_search_memories() ⭐ NEW (with synthesis)    │  │
 │  └─────────────────────┬────────────────────────────────┘  │
 │                        │                                    │
 │                        ↓                                    │
@@ -270,6 +294,179 @@ class MemoryRetrieveAgent:
 - Entity/relationship types
 - Thresholds and limits
 - Timeouts
+
+### 6. MCP Server Layer (`agent_reminiscence_mcp/`) ⭐ NEW in v0.2.0
+
+**Purpose**: Model Context Protocol (MCP) integration for Claude Desktop and other MCP clients.
+
+The MCP server exposes all memory management and search capabilities as standardized tools.
+
+#### MCP Server (`agent_reminiscence_mcp/server.py`)
+
+**Responsibilities**:
+- Initialize MCP server instance
+- Register all 6 tools
+- Handle incoming tool calls
+- Manage request/response lifecycle
+- Error handling and logging
+
+#### Tool Registration
+
+**All 6 MCP Tools**:
+
+```python
+# Memory Management Tools
+tools = [
+    # 1. Read Operations
+    Tool(name="get_active_memories", ...)
+    
+    # 2. Write Operations
+    Tool(name="create_active_memory", ...)
+    Tool(name="update_memory_sections", ...)
+    Tool(name="delete_active_memory", ...)
+    
+    # 3. Search Operations
+    Tool(name="search_memories", ...)          # Fast, pointer-based
+    Tool(name="deep_search_memories", ...)     # Synthesis-based ⭐ NEW
+]
+```
+
+#### Tool Handler Flow
+
+```
+Claude Desktop
+    ↓
+MCP Protocol (HTTP)
+    ↓
+AgentMem MCP Server
+    ↓
+Tool Router (handle_call_tool)
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Tool Dispatcher                                     │
+├─────────────────────────────────────────────────────┤
+│ ├─ _handle_get_active_memories()                   │
+│ ├─ _handle_create_active_memory()                  │
+│ ├─ _handle_update_memory_sections()                │
+│ ├─ _handle_delete_active_memory()                  │
+│ ├─ _handle_search_memories()                       │
+│ └─ _handle_deep_search_memories()  ⭐ NEW         │
+└─────────────────────────────────────────────────────┘
+    ↓
+AgentMem Core API
+    ↓
+MemoryManager & Services
+    ↓
+PostgreSQL + Neo4j
+```
+
+#### Claude Desktop Integration
+
+**Configuration** (`~/.config/claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "agent-mem": {
+      "command": "python",
+      "args": ["-m", "agent_reminiscence_mcp.run"],
+      "env": {
+        "POSTGRES_HOST": "localhost",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "OLLAMA_BASE_URL": "http://localhost:11434"
+      }
+    }
+  }
+}
+```
+
+**Available in Claude Conversations**:
+- Claude can call any of the 6 tools
+- Automatically handles tool invocations
+- Results integrated into conversation context
+- Full error handling and retries
+
+#### Tool Input Schemas
+
+**Search Tools Schema** (both search_memories and deep_search_memories):
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "external_id": {
+      "type": "string|integer|UUID",
+      "description": "Agent identifier"
+    },
+    "query": {
+      "type": "string",
+      "description": "Search query (supports complex, multi-part questions)"
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Number of results (1-100, default 10)",
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  "required": ["external_id", "query"]
+}
+```
+
+**Key Difference**:
+- `search_memories()`: Returns quickly (< 200ms), no synthesis
+- `deep_search_memories()`: Slower (500ms-2s), includes AI synthesis ⭐
+
+#### Design Patterns for Tool Registration
+
+**1. Lazy Initialization**:
+```python
+class MCPServer:
+    def __init__(self):
+        self._agent_mem = None  # Lazy loaded
+    
+    async def initialize(self):
+        self._agent_mem = AgentMem(config)
+        self._register_tools()
+```
+
+**2. Input Validation**:
+```python
+def _handle_search_memories(self, args: dict) -> dict:
+    # Validate required fields
+    if "external_id" not in args:
+        raise ValueError("external_id is required")
+    
+    # Validate types and ranges
+    limit = args.get("limit", 10)
+    if not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")
+```
+
+**3. Error Handling**:
+```python
+async def _handle_search_memories(self, args: dict) -> dict:
+    try:
+        result = await self._agent_mem.search_memories(...)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return {"success": False, "error": "Internal server error"}
+```
+
+**4. Request Logging**:
+```python
+async def handle_call_tool(self, tool_name: str, args: dict) -> dict:
+    logger.info(f"Tool called: {tool_name}", extra={"args": args})
+    
+    handler = getattr(self, f"_handle_{tool_name}")
+    result = await handler(args)
+    
+    logger.info(f"Tool result: {tool_name}", extra={"success": result.get("success")})
+    return result
+```
 
 ## Data Flow
 

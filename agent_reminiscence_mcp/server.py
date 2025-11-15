@@ -21,6 +21,7 @@ from .schemas import (
     GET_ACTIVE_MEMORIES_INPUT_SCHEMA,
     UPDATE_MEMORY_SECTIONS_INPUT_SCHEMA,
     SEARCH_MEMORIES_INPUT_SCHEMA,
+    DEEP_SEARCH_MEMORIES_INPUT_SCHEMA,
     CREATE_ACTIVE_MEMORY_INPUT_SCHEMA,
     DELETE_ACTIVE_MEMORY_INPUT_SCHEMA,
 )
@@ -28,6 +29,7 @@ from .schemas import (
 
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles datetime objects."""
+
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
@@ -156,6 +158,32 @@ async def handle_list_tools() -> list[types.Tool]:
             ),
             inputSchema=SEARCH_MEMORIES_INPUT_SCHEMA,
         ),
+        types.Tool(
+            name="deep_search_memories",
+            description=(
+                "Perform comprehensive memory search with full synthesis, entity extraction, and relationship analysis. "
+                "This is a deeper version of search_memories that performs AI synthesis and connects related concepts. "
+                "Use when you need complete context including how different pieces of information relate to each other. "
+                "\n\n"
+                "Key differences from search_memories:\n"
+                "- Performs AI synthesis to summarize findings\n"
+                "- Extracts and analyzes entity relationships\n"
+                "- Generates comprehensive response with connections\n"
+                "- Takes 500ms-2s (vs <200ms for fast search)\n"
+                "\n\n"
+                "Results include:\n"
+                "- Matched memory chunks with relevance scores\n"
+                "- Extracted entities and their relationships\n"
+                "- AI-synthesized summary connecting findings\n"
+                "- Confidence scores and temporal context\n"
+                "\n\n"
+                "Example queries:\n"
+                "- 'Deep analysis: How does JWT authentication connect to our API design?'\n"
+                "- 'What entities and relationships exist around database schema decisions?'\n"
+                "- 'Synthesize all information about performance optimization efforts'"
+            ),
+            inputSchema=DEEP_SEARCH_MEMORIES_INPUT_SCHEMA,
+        ),
     ]
 
 
@@ -190,6 +218,10 @@ async def handle_call_tool(
             return result
         elif name == "search_memories":
             result = await _handle_search_memories(agent_mem, arguments)
+            logger.info(f"Successfully executed {name}")
+            return result
+        elif name == "deep_search_memories":
+            result = await _handle_deep_search_memories(agent_mem, arguments)
             logger.info(f"Successfully executed {name}")
             return result
         else:
@@ -242,7 +274,9 @@ async def _handle_get_active_memories(
 
     import json
 
-    return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
+    return [
+        types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))
+    ]
 
 
 async def _handle_update_memory_sections(
@@ -344,17 +378,18 @@ async def _handle_update_memory_sections(
 
     import json
 
-    return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
+    return [
+        types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))
+    ]
 
 
 async def _handle_search_memories(
     agent_mem: AgentMem, arguments: dict[str, Any]
 ) -> list[types.TextContent]:
-    """Handle search_memories tool call."""
+    """Handle search_memories tool call - fast pointer-based search."""
     external_id = arguments["external_id"]
     query = arguments["query"]
     limit = arguments.get("limit", 10)
-    synthesis = arguments.get("synthesis", False)
 
     # Validate inputs
     if not external_id or not external_id.strip():
@@ -362,69 +397,194 @@ async def _handle_search_memories(
     if not query or not query.strip():
         raise ValueError("query cannot be empty")
 
-    # Perform search
-    result = await agent_mem.retrieve_memories(
+    # Perform fast search using new API
+    result = await agent_mem.search_memories(
         external_id=external_id,
         query=query,
         limit=limit,
-        synthesis=synthesis,
     )
 
-    # Format response using the new RetrievalResult structure
+    # Format response optimized for LLM consumption - hierarchical by tier and type
     response = {
         "mode": result.mode,
         "search_strategy": result.search_strategy,
         "confidence": result.confidence,
-        "chunks": [
-            {
-                "id": chunk.id,
-                "content": chunk.content,
-                "tier": chunk.tier,
-                "score": chunk.score,
-                **({"importance": chunk.importance} if chunk.importance is not None else {}),
-                **(
-                    {"start_date": chunk.start_date.isoformat()}
-                    if chunk.start_date is not None
-                    else {}
-                ),
-            }
-            for chunk in result.chunks
-        ],
-        "entities": [
-            {
-                "id": entity.id,
-                "name": entity.name,
-                "types": entity.types,
-                "description": entity.description,
-                "tier": entity.tier,
-                "importance": entity.importance,
-            }
-            for entity in result.entities
-        ],
-        "relationships": [
-            {
-                "id": rel.id,
-                "from_entity_name": rel.from_entity_name,
-                "to_entity_name": rel.to_entity_name,
-                "types": rel.types,
-                "description": rel.description,
-                "tier": rel.tier,
-                "importance": rel.importance,
-            }
-            for rel in result.relationships
-        ],
-        "synthesis": result.synthesis,
-        "metadata": result.metadata,
-        "result_counts": {
-            "chunks": len(result.chunks),
-            "entities": len(result.entities),
-            "relationships": len(result.relationships),
+        "shortterm_memory": {
+            "chunks": [
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "score": chunk.score,
+                    "relevance": "%.1f%%" % (chunk.score * 100),  # Human-readable percentage
+                    **({"section_id": chunk.section_id} if chunk.section_id else {}),
+                }
+                for chunk in result.shortterm_chunks
+            ],
+            "triplets": [
+                {
+                    "subject": triplet.subject,
+                    "predicate": triplet.predicate,
+                    "object": triplet.object,
+                    "importance": "%.1f%%" % (triplet.importance * 100),
+                    **({"description": triplet.description} if triplet.description else {}),
+                }
+                for triplet in result.shortterm_triplets
+            ],
+        },
+        "longterm_memory": {
+            "chunks": [
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "score": chunk.score,
+                    "relevance": "%.1f%%" % (chunk.score * 100),
+                    "importance": "%.1f%%" % (chunk.importance * 100),
+                    "temporal": {
+                        "start_date": chunk.start_date.isoformat(),
+                        **(
+                            {"last_updated": chunk.last_updated.isoformat()}
+                            if chunk.last_updated
+                            else {}
+                        ),
+                    },
+                }
+                for chunk in result.longterm_chunks
+            ],
+            "triplets": [
+                {
+                    "subject": triplet.subject,
+                    "predicate": triplet.predicate,
+                    "object": triplet.object,
+                    "importance": "%.1f%%" % (triplet.importance * 100),
+                    **({"description": triplet.description} if triplet.description else {}),
+                    **(
+                        {"temporal_validity": triplet.temporal_validity}
+                        if triplet.temporal_validity
+                        else {}
+                    ),
+                }
+                for triplet in result.longterm_triplets
+            ],
+        },
+        "summary": {
+            "shortterm_chunks_found": len(result.shortterm_chunks),
+            "longterm_chunks_found": len(result.longterm_chunks),
+            "shortterm_relationships": len(result.shortterm_triplets),
+            "longterm_relationships": len(result.longterm_triplets),
         },
     }
 
     import json
 
-    return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
+    return [
+        types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))
+    ]
+
+
+async def _handle_deep_search_memories(
+    agent_mem: AgentMem, arguments: dict[str, Any]
+) -> list[types.TextContent]:
+    """Handle deep_search_memories tool call with full synthesis."""
+    external_id = arguments["external_id"]
+    query = arguments["query"]
+    limit = arguments.get("limit", 10)
+
+    # Validate inputs
+    if not external_id or not external_id.strip():
+        raise ValueError("external_id cannot be empty")
+    if not query or not query.strip():
+        raise ValueError("query cannot be empty")
+
+    # Perform deep search with synthesis enabled
+    result = await agent_mem.deep_search_memories(
+        external_id=external_id,
+        query=query,
+        limit=limit,
+    )
+
+    # Format response optimized for LLM consumption - hierarchical with synthesis
+    response = {
+        "mode": result.mode,
+        "search_strategy": result.search_strategy,
+        "confidence": result.confidence,
+        "synthesis": result.synthesis,  # AI-generated analysis at top level
+        "shortterm_memory": {
+            "chunks": [
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "score": chunk.score,
+                    "relevance": "%.1f%%" % (chunk.score * 100),
+                    **({"section_id": chunk.section_id} if chunk.section_id else {}),
+                }
+                for chunk in result.shortterm_chunks
+            ],
+            "relationships": [
+                {
+                    "subject": triplet.subject,
+                    "predicate": triplet.predicate,
+                    "object": triplet.object,
+                    "importance": "%.1f%%" % (triplet.importance * 100),
+                    "access_count": triplet.access_count,
+                    **({"description": triplet.description} if triplet.description else {}),
+                }
+                for triplet in result.shortterm_triplets
+            ],
+        },
+        "longterm_memory": {
+            "chunks": [
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "score": chunk.score,
+                    "relevance": "%.1f%%" % (chunk.score * 100),
+                    "importance": "%.1f%%" % (chunk.importance * 100),
+                    "temporal": {
+                        "start_date": chunk.start_date.isoformat(),
+                        **(
+                            {"last_updated": chunk.last_updated.isoformat()}
+                            if chunk.last_updated
+                            else {}
+                        ),
+                    },
+                }
+                for chunk in result.longterm_chunks
+            ],
+            "relationships": [
+                {
+                    "subject": triplet.subject,
+                    "predicate": triplet.predicate,
+                    "object": triplet.object,
+                    "importance": "%.1f%%" % (triplet.importance * 100),
+                    **({"description": triplet.description} if triplet.description else {}),
+                    **(
+                        {"temporal_validity": triplet.temporal_validity}
+                        if triplet.temporal_validity
+                        else {}
+                    ),
+                }
+                for triplet in result.longterm_triplets
+            ],
+        },
+        "insights": {
+            "shortterm_chunks": len(result.shortterm_chunks),
+            "longterm_chunks": len(result.longterm_chunks),
+            "shortterm_relationships": len(result.shortterm_triplets),
+            "longterm_relationships": len(result.longterm_triplets),
+            "total_found": (
+                len(result.shortterm_chunks)
+                + len(result.longterm_chunks)
+                + len(result.shortterm_triplets)
+                + len(result.longterm_triplets)
+            ),
+        },
+    }
+
+    import json
+
+    return [
+        types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))
+    ]
 
 
 async def _handle_create_active_memory(
@@ -667,7 +827,9 @@ async def _handle_create_active_memory(
             f"Created memory {memory.id} for {external_id} with {len(memory.sections)} sections"
         )
 
-        return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
+        return [
+            types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))
+        ]
 
     except Exception as e:
         logger.error(f"Error creating memory: {e}", exc_info=True)
@@ -714,7 +876,9 @@ async def _handle_delete_active_memory(
             }
             logger.warning(f"Failed to delete memory {memory_id} for {external_id}")
 
-        return [types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))]
+        return [
+            types.TextContent(type="text", text=json.dumps(response, indent=2, cls=DateTimeEncoder))
+        ]
 
     except Exception as e:
         logger.error(f"Error deleting memory: {e}", exc_info=True)
@@ -724,5 +888,3 @@ async def _handle_delete_active_memory(
                 text=json.dumps({"error": f"Failed to delete memory: {str(e)}"}, indent=2),
             )
         ]
-
-

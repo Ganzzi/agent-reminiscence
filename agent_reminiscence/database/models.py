@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field, ConfigDict
 class ActiveMemory(BaseModel):
     """
     Active memory model representing working memory.
-    
+
     Uses template-driven structure with sections:
     - template_content: JSON template with section definitions and defaults
     - sections: JSONB with section_id -> {content, update_count, awake_update_count, last_updated}
     """
-    
+
     id: int
     external_id: str  # worker_id equivalent - generic identifier
     title: str
@@ -25,7 +25,7 @@ class ActiveMemory(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -371,3 +371,305 @@ class LongtermEntityRelationshipSearchResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ============================================================================
+# NEW v0.2.0 MODELS - OPTIMIZED FOR LLM AND OUTPUT
+# ============================================================================
+
+
+class ShorttermKnowledgeTriplet(BaseModel):
+    """
+    Shortterm knowledge triplet (subject-predicate-object).
+
+    Represents recent relationships extracted from shortterm memory.
+    Optimized for LLM processing and knowledge graph representation.
+
+    Example:
+        {"subject": "JWT", "predicate": "UsedFor", "object": "Authentication",
+         "importance": 0.9, "access_count": 3}
+    """
+
+    subject: str = Field(description="Subject entity name")
+    predicate: str = Field(description="Relationship type/predicate")
+    object: str = Field(description="Object entity name")
+    importance: float = Field(ge=0.0, le=1.0, description="Triplet importance score")
+    shortterm_memory_id: Optional[int] = Field(
+        default=None, description="Source shortterm memory ID"
+    )
+    access_count: int = Field(default=0, description="Number of times accessed")
+    description: Optional[str] = Field(
+        default=None, description="Optional relationship description"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata (confidence, additional_types, etc.)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LongtermKnowledgeTriplet(BaseModel):
+    """
+    Longterm knowledge triplet (subject-predicate-object).
+
+    Represents consolidated relationships from longterm memory with temporal validity.
+    Optimized for LLM processing and knowledge graph representation.
+
+    Example:
+        {"subject": "JWT", "predicate": "UsedFor", "object": "Authentication",
+         "importance": 0.95, "start_date": "2025-11-15T00:00:00Z", "temporal_validity": "evergreen"}
+    """
+
+    subject: str = Field(description="Subject entity name")
+    predicate: str = Field(description="Relationship type/predicate")
+    object: str = Field(description="Object entity name")
+    importance: float = Field(ge=0.0, le=1.0, description="Triplet importance score")
+    start_date: datetime = Field(description="When triplet became valid")
+    temporal_validity: Optional[str] = Field(
+        default=None, description="Validity period (e.g., 'evergreen', 'until_2025-12-01')"
+    )
+    access_count: int = Field(default=0, description="Number of times accessed")
+    description: Optional[str] = Field(
+        default=None, description="Optional relationship description"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata (confidence, additional_types, etc.)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ShorttermRetrievedChunk(BaseModel):
+    """
+    Chunk from shortterm memory (optimized for retrieval results).
+
+    Slim version without embedding vectors - only relevant fields for LLM consumption.
+    """
+
+    id: int = Field(description="Chunk ID")
+    content: str = Field(description="Chunk text content")
+    score: float = Field(ge=0.0, le=1.0, description="Relevance score (vector + BM25)")
+    section_id: Optional[str] = Field(
+        default=None, description="Reference to active memory section"
+    )
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LongtermRetrievedChunk(BaseModel):
+    """
+    Chunk from longterm memory (optimized for retrieval results).
+
+    Includes importance and temporal tracking for consolidated knowledge.
+    """
+
+    id: int = Field(description="Chunk ID")
+    content: str = Field(description="Chunk text content")
+    score: float = Field(ge=0.0, le=1.0, description="Relevance score (vector + BM25)")
+    importance: float = Field(ge=0.0, le=1.0, description="Chunk importance score")
+    start_date: datetime = Field(description="When chunk became valid")
+    last_updated: Optional[datetime] = Field(default=None, description="Last update timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetrievalResultV2(BaseModel):
+    """
+    Optimized retrieval result for v0.2.0.
+
+    Uses separated chunks by tier and triplet-based knowledge representation.
+
+    Attributes:
+        mode: "search" for fast programmatic search, "deep_search" for agent-powered search
+        shortterm_chunks: Relevant chunks from shortterm memory
+        longterm_chunks: Relevant chunks from longterm memory
+        shortterm_triplets: Knowledge triplets from shortterm memory
+        longterm_triplets: Knowledge triplets from longterm memory
+        synthesis: AI-generated summary (only in deep_search mode)
+        search_strategy: Explanation of search approach used
+        confidence: Overall confidence in result relevance (0-1)
+        metadata: Additional search metadata (counts, timing, etc.)
+    """
+
+    mode: Literal["search", "deep_search"] = Field(
+        description="Search mode: fast programmatic or agent-powered"
+    )
+    shortterm_chunks: List[ShorttermRetrievedChunk] = Field(
+        default_factory=list, description="Chunks from shortterm memory tier"
+    )
+    longterm_chunks: List[LongtermRetrievedChunk] = Field(
+        default_factory=list, description="Chunks from longterm memory tier"
+    )
+    shortterm_triplets: List[ShorttermKnowledgeTriplet] = Field(
+        default_factory=list,
+        description="Knowledge triplets from shortterm memory (subject-predicate-object)",
+    )
+    longterm_triplets: List[LongtermKnowledgeTriplet] = Field(
+        default_factory=list,
+        description="Knowledge triplets from longterm memory (subject-predicate-object)",
+    )
+    synthesis: Optional[str] = Field(
+        default=None,
+        description="Natural language synthesis (only in deep_search mode with synthesis=True)",
+    )
+    search_strategy: str = Field(description="Brief explanation of search approach and decisions")
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Confidence in result relevance (0-1)"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata (result_counts, timing, filters_applied, etc.)",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActiveMemorySummary(BaseModel):
+    """
+    Slim active memory for list views and summary endpoints.
+
+    Excludes heavy fields like template_content, metadata, and sections detail.
+    Use when listing or summarizing memories.
+    """
+
+    id: int = Field(description="Memory ID")
+    title: str = Field(description="Memory title")
+    section_count: int = Field(description="Number of sections in memory")
+    last_updated: datetime = Field(description="Last update timestamp")
+    created_at: datetime = Field(description="Creation timestamp")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActiveMemorySlim(BaseModel):
+    """
+    Slim active memory for output without metadata and external_id.
+
+    Use when returning created/updated memories to keep payload minimal.
+    Excludes: external_id, metadata, template_content (structure only).
+    """
+
+    id: int = Field(description="Memory ID")
+    title: str = Field(description="Memory title")
+    sections: Dict[str, Dict[str, Any]] = Field(
+        description="Memory sections: {section_id: {content, update_count, ...}}"
+    )
+    created_at: datetime = Field(description="Creation timestamp")
+    updated_at: datetime = Field(description="Last update timestamp")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# DEPRECATED MODELS (v0.1.x - kept for backward compatibility)
+# ============================================================================
+
+from typing_extensions import deprecated
+
+
+@deprecated(
+    "RetrievedChunk is deprecated in v0.2.0. Use ShorttermRetrievedChunk or "
+    "LongtermRetrievedChunk instead. Triplet-based knowledge representation is preferred. "
+    "See docs/MIGRATION_v0.1_to_v0.2.md for migration guide."
+)
+class RetrievedChunkDeprecated(BaseModel):
+    """DEPRECATED: Use ShorttermRetrievedChunk or LongtermRetrievedChunk."""
+
+    id: int
+    content: str
+    tier: Literal["shortterm", "longterm"]
+    score: float
+    importance: Optional[float] = None
+    start_date: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@deprecated(
+    "RetrievedEntity is deprecated in v0.2.0. Use KnowledgeTriplet instead for "
+    "triplet-based knowledge representation. See docs/MIGRATION_v0.1_to_v0.2.md"
+)
+class RetrievedEntityDeprecated(BaseModel):
+    """DEPRECATED: Use KnowledgeTriplet instead."""
+
+    id: str
+    name: str
+    types: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    tier: Literal["shortterm", "longterm"]
+    importance: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@deprecated(
+    "RetrievedRelationship is deprecated in v0.2.0. Use KnowledgeTriplet instead "
+    "for triplet-based knowledge representation. See docs/MIGRATION_v0.1_to_v0.2.md"
+)
+class RetrievedRelationshipDeprecated(BaseModel):
+    """DEPRECATED: Use KnowledgeTriplet instead."""
+
+    id: str
+    from_entity_name: Optional[str] = None
+    to_entity_name: Optional[str] = None
+    types: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    tier: Literal["shortterm", "longterm"]
+    importance: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Keep old RetrievalResult as alias for backward compatibility
+class RetrievalResultLegacy(BaseModel):
+    """
+    DEPRECATED: Legacy retrieval result from v0.1.x.
+
+    Use RetrievalResultV2 instead. This model is kept for backward compatibility
+    and will be removed in v0.3.0. See docs/MIGRATION_v0.1_to_v0.2.md
+    """
+
+    mode: Literal["pointer", "synthesis"] = Field(
+        description="DEPRECATED: Use RetrievalResultV2 with 'search' or 'deep_search'"
+    )
+    chunks: List["RetrievedChunkDeprecated"] = Field(default_factory=list)
+    entities: List["RetrievedEntityDeprecated"] = Field(default_factory=list)
+    relationships: List["RetrievedRelationshipDeprecated"] = Field(default_factory=list)
+    synthesis: Optional[str] = None
+    search_strategy: str = ""
+    confidence: float = 1.0
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Add extension methods to ActiveMemory for conversion
+def _add_conversion_methods():
+    """Add to_summary() and to_slim() methods to ActiveMemory."""
+
+    def to_summary(self) -> ActiveMemorySummary:
+        """Convert to summary view (for listings)."""
+        return ActiveMemorySummary(
+            id=self.id,
+            title=self.title,
+            section_count=len(self.sections),
+            last_updated=self.updated_at,
+            created_at=self.created_at,
+        )
+
+    def to_slim(self) -> ActiveMemorySlim:
+        """Convert to slim view (for outputs without metadata)."""
+        return ActiveMemorySlim(
+            id=self.id,
+            title=self.title,
+            sections=self.sections,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
+    ActiveMemory.to_summary = to_summary
+    ActiveMemory.to_slim = to_slim
+
+
+# Call at module load to add methods
+_add_conversion_methods()

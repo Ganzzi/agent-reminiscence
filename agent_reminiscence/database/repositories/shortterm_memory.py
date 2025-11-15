@@ -22,6 +22,7 @@ from agent_reminiscence.database.models import (
     ShorttermEntity,
     ShorttermRelationship,
     ShorttermEntityRelationshipSearchResult,
+    ShorttermKnowledgeTriplet,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,52 @@ def _convert_neo4j_datetime(dt):
     if hasattr(dt, "to_native"):
         return dt.to_native()
     return dt
+
+
+def _relationship_to_triplet(
+    relationship: ShorttermRelationship,
+    source_entity_name: str,
+    target_entity_name: str,
+    shortterm_memory_id: Optional[int] = None,
+) -> ShorttermKnowledgeTriplet:
+    """
+    Convert Neo4j relationship to RDF-style shortterm triplet.
+
+    Args:
+        relationship: ShorttermRelationship from Neo4j
+        source_entity_name: Subject entity name
+        target_entity_name: Object entity name
+        shortterm_memory_id: Source shortterm memory ID (optional)
+
+    Returns:
+        ShorttermKnowledgeTriplet with subject-predicate-object format
+    """
+    # Use first relationship type as predicate
+    predicate = relationship.types[0] if relationship.types else "RELATED_TO"
+
+    # Store additional types in metadata if they exist
+    additional_types = relationship.types[1:] if len(relationship.types) > 1 else []
+
+    return ShorttermKnowledgeTriplet(
+        subject=source_entity_name,
+        predicate=predicate,
+        object=target_entity_name,
+        importance=relationship.importance,
+        shortterm_memory_id=shortterm_memory_id,
+        access_count=relationship.access_count,
+        description=relationship.description,
+        metadata={
+            "relationship_id": relationship.id,
+            "additional_types": additional_types,
+            "last_access": (
+                relationship.last_access.isoformat() if relationship.last_access else None
+            ),
+            "confidence": (
+                relationship.metadata.get("confidence", 1.0) if relationship.metadata else 1.0
+            ),
+            **(relationship.metadata or {}),  # Include all custom metadata
+        },
+    )
 
 
 class ShorttermMemoryRepository:
@@ -956,6 +1003,58 @@ class ShorttermMemoryRepository:
             },
         )
 
+    async def search_entity_triplets(
+        self,
+        entity_names: List[str],
+        external_id: str,
+        limit: int = 10,
+        shortterm_memory_id: Optional[int] = None,
+        min_importance: Optional[float] = None,
+    ) -> Tuple[List[ShorttermEntity], List[ShorttermKnowledgeTriplet]]:
+        """
+        Search for entities and return their relationships as triplets.
+
+        This is the v0.2.0 optimized version of search_entities_with_relationships().
+        Returns entities and knowledge triplets instead of raw relationships.
+
+        Args:
+            entity_names: List of entity names to search for
+            external_id: Agent identifier
+            limit: Maximum number of matched entities to return
+            shortterm_memory_id: Optional filter by specific memory ID
+            min_importance: Optional minimum importance threshold
+
+        Returns:
+            Tuple of (matched_entities, triplets)
+            - matched_entities: List of ShorttermEntity objects
+            - triplets: List of ShorttermKnowledgeTriplet objects
+        """
+        # Use existing search method to get relationships
+        result = await self.search_entities_with_relationships(
+            entity_names=entity_names,
+            external_id=external_id,
+            limit=limit,
+            shortterm_memory_id=shortterm_memory_id,
+            min_importance=min_importance,
+        )
+
+        # Convert relationships to triplets
+        triplets = []
+        for rel in result.relationships:
+            triplet = _relationship_to_triplet(
+                relationship=rel,
+                source_entity_name=rel.from_entity_name or "Unknown",
+                target_entity_name=rel.to_entity_name or "Unknown",
+                shortterm_memory_id=shortterm_memory_id,
+            )
+            triplets.append(triplet)
+
+        logger.info(
+            f"Converted {len(result.relationships)} relationships to {len(triplets)} triplets"
+        )
+
+        return result.matched_entities, triplets
+
     async def increment_entity_access(self, entity_id: str) -> Optional[ShorttermEntity]:
         """
         Increment access count and update last access timestamp for an entity.
@@ -1699,5 +1798,3 @@ class ShorttermMemoryRepository:
                 )
         else:
             raise ValueError(f"Unsupported row format: {type(row)}")
-
-

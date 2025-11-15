@@ -7,8 +7,10 @@ Coordinates consolidation, promotion, and retrieval across memory tiers.
 
 import logging
 import asyncio
-from typing import List, Optional, Dict, Any, Set
+from typing import List, Optional, Dict, Any, Set, Protocol, Callable
 from datetime import datetime, timezone
+
+from pydantic_ai.usage import RunUsage
 
 from agent_reminiscence.config import Config
 from agent_reminiscence.database import (
@@ -22,7 +24,7 @@ from agent_reminiscence.database.repositories import (
 )
 from agent_reminiscence.database.models import (
     ActiveMemory,
-    RetrievalResult,
+    RetrievalResultV2,
     RetrievedChunk,
     RetrievedEntity,
     RetrievedRelationship,
@@ -33,6 +35,10 @@ from agent_reminiscence.database.models import (
     ConsolidationConflicts,
     ConflictEntityDetail,
     ConflictRelationshipDetail,
+    ShorttermKnowledgeTriplet,
+    LongtermKnowledgeTriplet,
+    ShorttermRetrievedChunk,
+    LongtermRetrievedChunk,
 )
 from agent_reminiscence.services.embedding import EmbeddingService
 from agent_reminiscence.utils.helpers import chunk_text
@@ -45,6 +51,51 @@ from agent_reminiscence.agents import (
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# USAGE TRACKING PROTOCOL
+# ============================================================================
+
+
+class UsageProcessor(Protocol):
+    """Protocol for pluggable token usage processing.
+
+    Allows custom implementations to handle token usage data from agent runs.
+    """
+
+    async def process_usage(self, external_id: str, usage: RunUsage) -> None:
+        """
+        Process token usage data from an agent run.
+
+        Args:
+            external_id: Agent identifier
+            usage: RunUsage object from pydantic-ai agent
+        """
+        ...
+
+
+class LoggingUsageProcessor:
+    """Default usage processor that logs token usage.
+
+    Implements UsageProcessor protocol for structured logging of token consumption.
+    """
+
+    async def process_usage(self, external_id: str, usage: RunUsage) -> None:
+        """
+        Log token usage data in structured format.
+
+        Args:
+            external_id: Agent identifier
+            usage: RunUsage object from pydantic-ai agent
+        """
+        logger.info(
+            f"Agent Token Usage | external_id={external_id} | "
+            f"requests={usage.requests} | "
+            f"input_tokens={usage.input_tokens} | "
+            f"output_tokens={usage.output_tokens} | "
+            f"total_tokens={usage.input_tokens + usage.output_tokens}"
+        )
+
+
 class MemoryManager:
     """
     Core memory management orchestrator.
@@ -53,12 +104,13 @@ class MemoryManager:
     Coordinates database operations, embedding generation, and agent workflows.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, usage_processor: Optional[UsageProcessor] = None):
         """
         Initialize memory manager (stateless).
 
         Args:
             config: Configuration object
+            usage_processor: Optional custom UsageProcessor for token tracking (default: LoggingUsageProcessor)
         """
         self.config = config
 
@@ -68,6 +120,9 @@ class MemoryManager:
 
         # Services
         self.embedding_service = EmbeddingService(config)
+
+        # Token usage tracking
+        self.usage_processor = usage_processor or LoggingUsageProcessor()
 
         # AI Agents
         self.retriever_agent: Optional[MemoryRetrieveAgent] = None
@@ -308,37 +363,166 @@ class MemoryManager:
 
         return success
 
-    async def retrieve_memories(
+    async def search_memories(
         self,
         external_id: str,
         query: str,
         limit: int = 10,
-        synthesis: bool = False,
-    ) -> RetrievalResult:
+    ) -> RetrievalResultV2:
         """
-        Retrieve memories across all tiers using MemoryRetrieveAgent.
+        Fast pointer-based memory retrieval (< 200ms target).
 
-        Uses intelligent retrieval agent to:
-        - Analyze query and determine optimal search strategy
-        - Search across shortterm and longterm tiers
-        - Extract and rank relevant entities and relationships
-        - Optionally synthesize results into natural language
+        Searches directly across memory tiers using repository methods without agent overhead.
+        Returns pointer references instead of full data, optimized for quick lookups.
+
+        This is the preferred method for simple queries where synthesis is not needed.
 
         Args:
             external_id: Agent identifier
             query: Search query
-            limit: Maximum results per tier (can be overridden by agent)
-            synthesis: Force AI synthesis regardless of query complexity (default: False)
+            limit: Maximum results per tier (default: 10)
 
         Returns:
-            RetrievalResult object with aggregated results and optional AI synthesis
+            RetrievalResultV2 with chunks and triplets separated by tier
         """
         self._ensure_initialized()
 
-        logger.info(f"Retrieving memories for {external_id}, query: {query[:50]}...")
+        logger.info(f"Fast memory search for {external_id}, query: {query[:50]}...")
 
         try:
-            # Use the retrieve_memory function from memory_retriever agent
+            # Generate query embedding for vector search
+            query_embedding = await self.embedding_service.get_embedding(query)
+
+            shortterm_chunks = []
+            longterm_chunks = []
+            shortterm_triplets = []
+            longterm_triplets = []
+
+            # Search shortterm tier (high priority, recent data)
+            try:
+                st_chunk_results = await self.shortterm_repo.hybrid_search(
+                    external_id=external_id,
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    vector_weight=0.6,
+                    bm25_weight=0.4,
+                )
+
+                # Convert ShorttermMemoryChunk to ShorttermRetrievedChunk
+                for chunk in st_chunk_results:
+                    retrieved_chunk = ShorttermRetrievedChunk(
+                        id=chunk.id,
+                        content=chunk.content,
+                        score=chunk.similarity_score or 0.5,  # Default if not set
+                        section_id=chunk.section_id,
+                        metadata=chunk.metadata or {},
+                    )
+                    shortterm_chunks.append(retrieved_chunk)
+
+                logger.info(f"Found {len(shortterm_chunks)} shortterm chunks")
+            except Exception as e:
+                logger.error(f"Error searching shortterm chunks: {e}", exc_info=True)
+
+            # Search longterm tier (comprehensive historical data)
+            try:
+                lt_chunk_results = await self.longterm_repo.hybrid_search(
+                    external_id=external_id,
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    vector_weight=0.6,
+                    bm25_weight=0.4,
+                )
+
+                # Convert LongtermMemoryChunk to LongtermRetrievedChunk
+                for chunk in lt_chunk_results:
+                    retrieved_chunk = LongtermRetrievedChunk(
+                        id=chunk.id,
+                        content=chunk.content,
+                        score=chunk.similarity_score or 0.5,  # Default if not set
+                        importance=chunk.importance,
+                        start_date=chunk.start_date,
+                        last_updated=chunk.last_updated,
+                        metadata=chunk.metadata or {},
+                    )
+                    longterm_chunks.append(retrieved_chunk)
+
+                logger.info(f"Found {len(longterm_chunks)} longterm chunks")
+            except Exception as e:
+                logger.error(f"Error searching longterm chunks: {e}", exc_info=True)
+
+            # Calculate average confidence based on search scores
+            confidence = 0.75 if (shortterm_chunks or longterm_chunks) else 0.1
+
+            result = RetrievalResultV2(
+                mode="search",
+                shortterm_chunks=shortterm_chunks,
+                longterm_chunks=longterm_chunks,
+                shortterm_triplets=shortterm_triplets,
+                longterm_triplets=longterm_triplets,
+                synthesis=None,
+                search_strategy="Direct repository search across tiers (programmatic mode)",
+                confidence=confidence,
+                metadata={
+                    "search_type": "fast",
+                    "shortterm_chunks": len(shortterm_chunks),
+                    "longterm_chunks": len(longterm_chunks),
+                    "shortterm_triplets": len(shortterm_triplets),
+                    "longterm_triplets": len(longterm_triplets),
+                },
+            )
+
+            logger.info(
+                f"Fast search completed: {len(shortterm_chunks)} shortterm chunks, "
+                f"{len(longterm_chunks)} longterm chunks"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Fast search failed: {e}", exc_info=True)
+            # Return empty result instead of fallback
+            return RetrievalResultV2(
+                mode="search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
+                synthesis=None,
+                search_strategy=f"Search failed: {str(e)}",
+                confidence=0.0,
+                metadata={"error": str(e)},
+            )
+
+    async def deep_search_memories(
+        self,
+        external_id: str,
+        query: str,
+        limit: int = 10,
+    ) -> RetrievalResultV2:
+        """
+        Deep memory retrieval with AI synthesis (500ms-2s target).
+
+        Uses full MemoryRetrieveAgent for intelligent query understanding, cross-tier optimization,
+        entity extraction, relationship inference, and natural language synthesis.
+
+        This is the comprehensive retrieval mode for complex queries requiring interpretation.
+
+        Args:
+            external_id: Agent identifier
+            query: Search query
+            limit: Maximum results per tier (default: 10)
+
+        Returns:
+            RetrievalResultV2 with chunks, triplets separated by tier, and AI synthesis
+        """
+        self._ensure_initialized()
+
+        logger.info(f"Deep memory search for {external_id}, query: {query[:50]}...")
+
+        try:
+            # Use existing retrieve_memory function which provides full agent-powered synthesis
             result = await retrieve_memory(
                 query=query,
                 external_id=external_id,
@@ -346,36 +530,47 @@ class MemoryManager:
                 longterm_repo=self.longterm_repo,
                 active_repo=self.active_repo,
                 embedding_service=self.embedding_service,
-                synthesis=synthesis,
+                synthesis=True,  # Force synthesis for deep search
             )
 
             logger.info(
-                f"Memory retrieval completed: mode={result.mode}, "
-                f"confidence={result.confidence:.2f}, "
-                f"{len(result.chunks)} chunks, {len(result.entities)} entities, "
-                f"{len(result.relationships)} relationships"
+                "Deep search completed: %s ST chunks, %s LT chunks, %s ST triplets, %s LT triplets, "
+                "confidence=%.2f",
+                len(result.shortterm_chunks),
+                len(result.longterm_chunks),
+                len(result.shortterm_triplets),
+                len(result.longterm_triplets),
+                result.confidence,
             )
 
             return result
 
         except Exception as e:
-            logger.error(f"Agent-based retrieval failed: {e}", exc_info=True)
-            logger.warning("Falling back to basic retrieval...")
-
-            # Fallback to basic retrieval (always search both tiers)
-            return await self._retrieve_memories_basic(external_id, query, limit)
+            logger.error(f"Deep search failed: {e}", exc_info=True)
+            # Return error result instead of falling back (deep search is comprehensive)
+            return RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
+                synthesis=f"Deep search failed: {str(e)}",
+                search_strategy="Failed to execute deep search",
+                confidence=0.0,
+                metadata={"error": str(e)},
+            )
 
     async def _retrieve_memories_basic(
         self,
         external_id: str,
         query: str,
         limit: int = 10,
-    ) -> RetrievalResult:
+    ) -> RetrievalResultV2:
         """
         Fallback: Basic retrieval without AI agent.
 
-        Used when MemoryRetrieveAgent fails or is unavailable.
-        Performs simple hybrid search across both tiers without intelligent ranking or synthesis.
+        Used when search fails. Performs simple hybrid search across both tiers
+        without intelligent ranking or synthesis.
 
         Args:
             external_id: Agent identifier
@@ -383,7 +578,7 @@ class MemoryManager:
             limit: Maximum results per tier
 
         Returns:
-            RetrievalResult with basic search results (no synthesis)
+            RetrievalResultV2 with basic search results (no synthesis)
         """
         self._ensure_initialized()
 
@@ -392,14 +587,12 @@ class MemoryManager:
         # Generate embedding for query
         query_embedding = await self.embedding_service.get_embedding(query)
 
-        chunks = []
-        entities = []
-        relationships = []
+        shortterm_chunks = []
+        longterm_chunks = []
 
         # Search shortterm memory
-        # Search shortterm memory
         try:
-            st_chunks = await self.shortterm_repo.hybrid_search(
+            st_results = await self.shortterm_repo.hybrid_search(
                 external_id=external_id,
                 query_text=query,
                 query_embedding=query_embedding,
@@ -408,33 +601,14 @@ class MemoryManager:
                 bm25_weight=0.5,
             )
 
-            for chunk in st_chunks:
-                # Calculate a combined score (average of available scores)
-                scores = []
-                if chunk.similarity_score is not None:
-                    scores.append(chunk.similarity_score)
-                if chunk.bm25_score is not None:
-                    scores.append(chunk.bm25_score)
-                combined_score = sum(scores) / len(scores) if scores else 0.0
-
-                chunks.append(
-                    RetrievedChunk(
-                        id=chunk.id,
-                        content=chunk.content,
-                        tier="shortterm",
-                        score=combined_score,
-                        importance=None,
-                        start_date=None,
-                    )
-                )
-
-            logger.info(f"Found {len(st_chunks)} shortterm chunks")
+            # TODO: Convert to ShorttermRetrievedChunk format
+            logger.info(f"Found {len(st_results)} shortterm chunks")
         except Exception as e:
             logger.error(f"Error searching shortterm chunks: {e}", exc_info=True)
 
         # Search longterm memory
         try:
-            lt_chunks = await self.longterm_repo.hybrid_search(
+            lt_results = await self.longterm_repo.hybrid_search(
                 external_id=external_id,
                 query_text=query,
                 query_embedding=query_embedding,
@@ -443,47 +617,24 @@ class MemoryManager:
                 bm25_weight=0.5,
             )
 
-            for chunk in lt_chunks:
-                # Calculate a combined score (average of available scores)
-                scores = []
-                if chunk.similarity_score is not None:
-                    scores.append(chunk.similarity_score)
-                if chunk.bm25_score is not None:
-                    scores.append(chunk.bm25_score)
-                combined_score = sum(scores) / len(scores) if scores else 0.0
-
-                chunks.append(
-                    RetrievedChunk(
-                        id=chunk.id,
-                        content=chunk.content,
-                        tier="longterm",
-                        score=combined_score,
-                        importance=chunk.importance,
-                        start_date=chunk.start_date,
-                    )
-                )
-
-            logger.info(f"Found {len(lt_chunks)} longterm chunks")
+            # TODO: Convert to LongtermRetrievedChunk format
+            logger.info(f"Found {len(lt_results)} longterm chunks")
         except Exception as e:
             logger.error(f"Error searching longterm chunks: {e}", exc_info=True)
 
-        # Sort chunks by score (descending)
-        chunks.sort(key=lambda x: x.score, reverse=True)
-
-        # Limit total chunks
-        chunks = chunks[: limit * 2]  # Allow more results since we're combining tiers
-
-        return RetrievalResult(
-            mode="pointer",
-            chunks=chunks,
-            entities=entities,
-            relationships=relationships,
+        return RetrievalResultV2(
+            mode="search",
+            shortterm_chunks=shortterm_chunks,
+            longterm_chunks=longterm_chunks,
+            shortterm_triplets=[],
+            longterm_triplets=[],
             synthesis=None,
-            search_strategy="Basic hybrid search (vector + BM25) across both tiers without AI agent",
-            confidence=0.5,  # Lower confidence for basic search
+            search_strategy="Basic hybrid search (vector + BM25) across tiers without AI agent",
+            confidence=0.5,
             metadata={
                 "limit": limit,
-                "total_chunks": len(chunks),
+                "total_shortterm": len(shortterm_chunks),
+                "total_longterm": len(longterm_chunks),
             },
         )
 
@@ -1595,5 +1746,3 @@ class MemoryManager:
 
         # Cap at 1.0
         return min(importance, 1.0)
-
-

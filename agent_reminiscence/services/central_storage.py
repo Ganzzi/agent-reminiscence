@@ -17,6 +17,8 @@ from agent_reminiscence.database.models import (
     LongtermEntity,
     ShorttermRelationship,
     LongtermRelationship,
+    ShorttermKnowledgeTriplet,
+    LongtermKnowledgeTriplet,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,9 @@ class CentralStorage:
         self._chunks: Dict[str, Dict[str, ShorttermMemoryChunk | LongtermMemoryChunk]] = {}
         self._entities: Dict[str, Dict[str, ShorttermEntity | LongtermEntity]] = {}
         self._relationships: Dict[str, Dict[str, ShorttermRelationship | LongtermRelationship]] = {}
+        self._triplets: Dict[
+            str, Dict[str, ShorttermKnowledgeTriplet | LongtermKnowledgeTriplet]
+        ] = {}
 
         self._initialized = True
         logger.debug("CentralStorage singleton initialized")
@@ -66,6 +71,8 @@ class CentralStorage:
             self._entities[external_id] = {}
         if external_id not in self._relationships:
             self._relationships[external_id] = {}
+        if external_id not in self._triplets:
+            self._triplets[external_id] = {}
 
     def store_chunk(
         self,
@@ -130,6 +137,30 @@ class CentralStorage:
         self._relationships[external_id][pointer_id] = relationship
         return pointer_id
 
+    def store_triplet(
+        self,
+        external_id: str,
+        tool_call_id: str,
+        triplet: ShorttermKnowledgeTriplet | LongtermKnowledgeTriplet,
+    ) -> str:
+        """
+        Store a knowledge triplet and return its pointer ID.
+
+        Args:
+            external_id: Agent identifier
+            tool_call_id: Unique tool call identifier
+            triplet: Knowledge triplet to store
+
+        Returns:
+            Pointer ID for referencing the triplet
+        """
+        self._ensure_external_id_exists(external_id)
+        # Use subject:predicate:object as unique identifier for triplet
+        triplet_uid = f"{triplet.subject}:{triplet.predicate}:{triplet.object}"
+        pointer_id = f"{tool_call_id}:triplet:{triplet_uid}"
+        self._triplets[external_id][pointer_id] = triplet
+        return pointer_id
+
     def get_chunk(
         self, external_id: str, pointer_id: str
     ) -> Optional[ShorttermMemoryChunk | LongtermMemoryChunk]:
@@ -175,6 +206,21 @@ class CentralStorage:
         """
         return self._relationships.get(external_id, {}).get(pointer_id)
 
+    def get_triplet(
+        self, external_id: str, pointer_id: str
+    ) -> Optional[ShorttermKnowledgeTriplet | LongtermKnowledgeTriplet]:
+        """
+        Retrieve a knowledge triplet by pointer ID.
+
+        Args:
+            external_id: Agent identifier
+            pointer_id: Pointer ID to retrieve
+
+        Returns:
+            Knowledge triplet if found, None otherwise
+        """
+        return self._triplets.get(external_id, {}).get(pointer_id)
+
     def clear_external_id(self, external_id: str) -> None:
         """
         Clear all stored data for a specific external_id.
@@ -188,6 +234,8 @@ class CentralStorage:
             del self._entities[external_id]
         if external_id in self._relationships:
             del self._relationships[external_id]
+        if external_id in self._triplets:
+            del self._triplets[external_id]
         logger.debug(f"Cleared storage for external_id={external_id}")
 
     def clear_all(self) -> None:
@@ -236,5 +284,3 @@ def get_central_storage() -> CentralStorage:
         CentralStorage singleton instance
     """
     return CentralStorage()
-
-

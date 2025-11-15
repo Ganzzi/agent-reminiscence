@@ -76,6 +76,11 @@ def mock_config() -> Config:
         promotion_importance_threshold=0.7,
         entity_similarity_threshold=0.85,
         entity_overlap_threshold=0.7,
+        # Agent model configurations (required for tests using agents)
+        er_extractor_agent_model="google:gemini-2.5-flash",
+        memory_update_agent_model="google:gemini-2.5-flash",
+        memorizer_agent_model="google:gemini-2.5-flash",
+        memory_retrieve_agent_model="google:gemini-2.5-flash",
     )
 
 
@@ -411,5 +416,3 @@ def mock_memory_retrieve_strategy() -> dict:
         "filters": {},
         "confidence": 0.9,
     }
-
-

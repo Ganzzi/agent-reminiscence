@@ -212,6 +212,47 @@ CREATE_ACTIVE_MEMORY_INPUT_SCHEMA: dict[str, Any] = {
     "required": ["external_id", "title", "template_content"],
 }
 
+# Tool 4: deep_search_memories
+DEEP_SEARCH_MEMORIES_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "external_id": {
+            "type": "string",
+            "description": "Unique identifier for the agent",
+        },
+        "query": {
+            "type": "string",
+            "description": (
+                "Natural language query describing the context, problem, or information needed. "
+                "This search performs full synthesis with entity extraction and relationship analysis. "
+                "\n\n"
+                "Use when you need:\n"
+                "- Comprehensive context with entity relationships\n"
+                "- AI-synthesized summary of findings\n"
+                "- Connection to related concepts and decisions\n"
+                "\n\n"
+                "Example queries:\n"
+                "- 'Deep analysis: How does JWT authentication connect to our API design?'\n"
+                "- 'What entities and relationships exist around our database schema decisions?'\n"
+                "- 'Synthesize all information about performance optimization efforts'"
+            ),
+        },
+        "limit": {
+            "type": "integer",
+            "description": "Maximum results per tier",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100,
+        },
+        "synthesis": {
+            "type": "boolean",
+            "description": "Generate AI summary of search results (default: true for deep search)",
+            "default": True,
+        },
+    },
+    "required": ["external_id", "query"],
+}
+
 # Tool: delete_active_memory
 DELETE_ACTIVE_MEMORY_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -227,5 +268,3 @@ DELETE_ACTIVE_MEMORY_INPUT_SCHEMA: dict[str, Any] = {
     },
     "required": ["external_id", "memory_id"],
 }
-
-

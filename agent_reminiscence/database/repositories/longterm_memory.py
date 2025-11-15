@@ -21,6 +21,7 @@ from agent_reminiscence.database.models import (
     LongtermEntity,
     LongtermRelationship,
     LongtermEntityRelationshipSearchResult,
+    LongtermKnowledgeTriplet,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,48 @@ def _convert_neo4j_datetime(dt):
     if hasattr(dt, "to_native"):
         return dt.to_native()
     return dt
+
+
+def _relationship_to_triplet(
+    relationship: LongtermRelationship,
+    source_entity_name: str,
+    target_entity_name: str,
+) -> LongtermKnowledgeTriplet:
+    """
+    Convert Neo4j relationship to RDF-style longterm triplet.
+
+    Args:
+        relationship: LongtermRelationship from Neo4j
+        source_entity_name: Subject entity name
+        target_entity_name: Object entity name
+
+    Returns:
+        LongtermKnowledgeTriplet with subject-predicate-object format
+    """
+    # Use first relationship type as predicate
+    predicate = relationship.types[0] if relationship.types else "RELATED_TO"
+
+    # Store additional types in metadata if they exist
+    additional_types = relationship.types[1:] if len(relationship.types) > 1 else []
+
+    return LongtermKnowledgeTriplet(
+        subject=source_entity_name,
+        predicate=predicate,
+        object=target_entity_name,
+        importance=relationship.importance,
+        start_date=relationship.start_date,
+        temporal_validity=None,  # Can be set by caller if needed
+        access_count=relationship.access_count,
+        description=relationship.description,
+        metadata={
+            "relationship_id": relationship.id,
+            "additional_types": additional_types,
+            "last_access": (
+                relationship.last_access.isoformat() if relationship.last_access else None
+            ),
+            **relationship.metadata,  # Include all custom metadata
+        },
+    )
 
 
 class LongtermMemoryRepository:
@@ -642,6 +685,54 @@ class LongtermMemoryRepository:
                 "min_importance": min_importance,
             },
         )
+
+    async def search_entity_triplets(
+        self,
+        entity_names: List[str],
+        external_id: str,
+        limit: int = 10,
+        min_importance: Optional[float] = None,
+    ) -> tuple[List[LongtermEntity], List[LongtermKnowledgeTriplet]]:
+        """
+        Search for entities and return their relationships as triplets.
+
+        This is the v0.2.0 optimized version of search_entities_with_relationships().
+        Returns entities and knowledge triplets instead of raw relationships.
+
+        Args:
+            entity_names: List of entity names to search for
+            external_id: Agent identifier
+            limit: Maximum number of matched entities to return
+            min_importance: Optional minimum importance threshold
+
+        Returns:
+            Tuple of (matched_entities, triplets)
+            - matched_entities: List of LongtermEntity objects
+            - triplets: List of LongtermKnowledgeTriplet objects
+        """
+        # Use existing search method to get relationships
+        result = await self.search_entities_with_relationships(
+            entity_names=entity_names,
+            external_id=external_id,
+            limit=limit,
+            min_importance=min_importance,
+        )
+
+        # Convert relationships to triplets
+        triplets = []
+        for rel in result.relationships:
+            triplet = _relationship_to_triplet(
+                relationship=rel,
+                source_entity_name=rel.from_entity_name or "Unknown",
+                target_entity_name=rel.to_entity_name or "Unknown",
+            )
+            triplets.append(triplet)
+
+        logger.info(
+            f"Converted {len(result.relationships)} relationships to {len(triplets)} triplets"
+        )
+
+        return result.matched_entities, triplets
 
     async def increment_entity_access(self, entity_id: str) -> Optional[LongtermEntity]:
         """
@@ -1431,5 +1522,3 @@ class LongtermMemoryRepository:
                 last_access=row[8],
                 metadata=row[9] if isinstance(row[9], dict) else {},
             )
-
-

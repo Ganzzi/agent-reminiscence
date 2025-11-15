@@ -46,15 +46,15 @@ class TestEndToEndWorkflow:
                     "template": {"id": "conversation-template", "name": "Conversation Template"},
                     "sections": [
                         {"id": "summary", "description": "Summary section"},
-                        {"id": "context", "description": "Context section"}
-                    ]
+                        {"id": "context", "description": "Context section"},
+                    ],
                 },
                 sections={
                     "summary": {
-                        "content": "Initial conversation", 
+                        "content": "Initial conversation",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -71,18 +71,21 @@ class TestEndToEndWorkflow:
                     external_id="test-integration",
                     title="Test Conversation",
                     template_content={
-                        "template": {"id": "conversation-template", "name": "Conversation Template"},
+                        "template": {
+                            "id": "conversation-template",
+                            "name": "Conversation Template",
+                        },
                         "sections": [
                             {"id": "summary", "description": "Summary section"},
-                            {"id": "context", "description": "Context section"}
-                        ]
+                            {"id": "context", "description": "Context section"},
+                        ],
                     },
                     sections={
                         "summary": {
-                            "content": f"Update {i}", 
+                            "content": f"Update {i}",
                             "update_count": i,
                             "awake_update_count": i,
-                            "last_updated": datetime.now(timezone.utc)
+                            "last_updated": datetime.now(timezone.utc),
                         }
                     },
                     metadata={},
@@ -93,20 +96,21 @@ class TestEndToEndWorkflow:
 
             mock_mm_instance.update_active_memory_sections = AsyncMock(side_effect=updates)
 
-            # Mock retrieve with proper RetrievalResult structure
-            from agent_reminiscence.database.models import RetrievalResult
+            # Mock retrieve with proper RetrievalResultV2 structure
+            from agent_reminiscence.database.models import RetrievalResultV2
 
-            mock_retrieval_result = RetrievalResult(
-                mode="synthesis",
-                chunks=[],
-                entities=[],
-                relationships=[],
+            mock_retrieval_result = RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
                 synthesis="Retrieved conversation history about test topic.",
                 search_strategy="Test search",
                 confidence=0.9,
                 metadata={},
             )
-            mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_retrieval_result)
+            mock_mm_instance.deep_search_memories = AsyncMock(return_value=mock_retrieval_result)
 
             mock_mm.return_value = mock_mm_instance
 
@@ -117,18 +121,21 @@ class TestEndToEndWorkflow:
                     external_id="test-integration",
                     title="Test Conversation",
                     template_content={
-                        "template": {"id": "conversation-template", "name": "Conversation Template"},
+                        "template": {
+                            "id": "conversation-template",
+                            "name": "Conversation Template",
+                        },
                         "sections": [
                             {"id": "summary", "description": "Summary section"},
-                            {"id": "context", "description": "Context section"}
-                        ]
+                            {"id": "context", "description": "Context section"},
+                        ],
                     },
                     initial_sections={
                         "summary": {
-                            "content": "Initial conversation", 
+                            "content": "Initial conversation",
                             "update_count": 0,
                             "awake_update_count": 0,
-                            "last_updated": None
+                            "last_updated": None,
                         }
                     },
                 )
@@ -146,13 +153,13 @@ class TestEndToEndWorkflow:
                 assert mem.id == 1
 
                 # 3. Retrieve memories
-                result = await agent_mem.retrieve_memories(
+                result = await agent_mem.deep_search_memories(
                     query="What did we discuss?",
                     external_id="test-integration",
                 )
 
                 assert result is not None
-                assert result.mode == "synthesis"
+                assert result.mode == "deep_search"
                 assert result.synthesis is not None
                 assert len(result.synthesis) > 0
 
@@ -204,14 +211,14 @@ class TestConsolidationWorkflow:
                 title="Chunking Test",
                 template_content={
                     "template": {"id": "conversation-template", "name": "Conversation Template"},
-                    "sections": [{"id": "content", "description": "Content section"}]
+                    "sections": [{"id": "content", "description": "Content section"}],
                 },
                 sections={
                     "content": {
-                        "content": long_content, 
+                        "content": long_content,
                         "update_count": 5,
                         "awake_update_count": 5,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     }
                 },
                 metadata={},
@@ -229,15 +236,18 @@ class TestConsolidationWorkflow:
                     external_id="test-chunking",
                     title="Chunking Test",
                     template_content={
-                        "template": {"id": "conversation-template", "name": "Conversation Template"},
-                        "sections": [{"id": "content", "description": "Content section"}]
+                        "template": {
+                            "id": "conversation-template",
+                            "name": "Conversation Template",
+                        },
+                        "sections": [{"id": "content", "description": "Content section"}],
                     },
                     initial_sections={
                         "content": {
                             "content": long_content,
                             "update_count": 5,
                             "awake_update_count": 5,
-                            "last_updated": datetime.now(timezone.utc)
+                            "last_updated": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -316,11 +326,11 @@ class TestCrossTierSearch:
             )
 
             mock_mm_instance = AsyncMock()
-            mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_result)
+            mock_mm_instance.deep_search_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
             async with AgentMem(config=test_config) as agent_mem:
-                result = await agent_mem.retrieve_memories(
+                result = await agent_mem.deep_search_memories(
                     query="machine learning",
                     external_id="test-123",
                 )
@@ -337,13 +347,14 @@ class TestCrossTierSearch:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
-            from agent_reminiscence.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResultV2
 
-            mock_result = RetrievalResult(
-                mode="synthesis",
-                chunks=[],
-                entities=[],
-                relationships=[],
+            mock_result = RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
                 synthesis="Hybrid search results with weighted combination.",
                 search_strategy="Hybrid search (vector + BM25)",
                 confidence=0.85,
@@ -351,11 +362,11 @@ class TestCrossTierSearch:
             )
 
             mock_mm_instance = AsyncMock()
-            mock_mm_instance.retrieve_memories = AsyncMock(return_value=mock_result)
+            mock_mm_instance.deep_search_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
             async with AgentMem(config=test_config) as agent_mem:
-                result = await agent_mem.retrieve_memories(
+                result = await agent_mem.deep_search_memories(
                     query="test",
                     external_id="test-123",
                 )
@@ -388,9 +399,11 @@ class TestEntityRelationshipPersistence:
                     title="Entity Discussion",
                     template_content={
                         "template": {"id": "test", "name": "Test"},
-                        "sections": [{"id": "summary", "description": "Discussion summary"}]
+                        "sections": [{"id": "summary", "description": "Discussion summary"}],
                     },
-                    initial_sections={"summary": {"content": "Discussion about Python and Machine Learning"}},
+                    initial_sections={
+                        "summary": {"content": "Discussion about Python and Machine Learning"}
+                    },
                 )
 
                 # Consolidation should extract entities
@@ -496,7 +509,7 @@ class TestErrorRecovery:
                     title="Fallback Test",
                     template_content={
                         "template": {"id": "test", "name": "Test"},
-                        "sections": [{"id": "summary", "description": "Test summary"}]
+                        "sections": [{"id": "summary", "description": "Test summary"}],
                     },
                     initial_sections={"summary": {"content": "Test"}},
                 )
@@ -527,7 +540,7 @@ class TestPerformanceCharacteristics:
                         title=f"Memory {i}",
                         template_content={
                             "template": {"id": "test", "name": "Test"},
-                            "sections": [{"id": "summary", "description": "Test summary"}]
+                            "sections": [{"id": "summary", "description": "Test summary"}],
                         },
                         initial_sections={"summary": {"content": f"Memory {i}"}},
                     )
@@ -543,18 +556,28 @@ class TestPerformanceCharacteristics:
             patch("agent_reminiscence.core.MemoryManager") as mock_mm,
         ):
 
+            from agent_reminiscence.database.models import RetrievalResultV2
+
             mock_mm_instance = AsyncMock()
             # Return large result set
-            large_response = "Summary of 1000+ search results..."
-            mock_mm_instance.retrieve_memories = AsyncMock(return_value=large_response)
+            large_response = RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
+                synthesis="Summary of 1000+ search results...",
+                search_strategy="Large result set search",
+                confidence=0.8,
+                metadata={},
+            )
+            mock_mm_instance.deep_search_memories = AsyncMock(return_value=large_response)
             mock_mm.return_value = mock_mm_instance
 
             async with AgentMem(config=test_config) as agent_mem:
-                result = await agent_mem.retrieve_memories(
+                result = await agent_mem.deep_search_memories(
                     query="broad query",
                     external_id="test-123",
                 )
 
                 assert result is not None
-
-

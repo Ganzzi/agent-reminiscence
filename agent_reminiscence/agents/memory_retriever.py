@@ -15,12 +15,13 @@ Two-stage pipeline:
 """
 
 import logging
+from datetime import datetime
 from typing import Dict, Any, List, Optional, Literal
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, Tool
-
+from pydantic_ai.usage import RunUsage
 from agent_reminiscence.config.settings import get_config
 from agent_reminiscence.services.llm_model_provider import model_provider
 from agent_reminiscence.services.embedding import EmbeddingService
@@ -31,11 +32,11 @@ from agent_reminiscence.database.repositories import (
     ActiveMemoryRepository,
 )
 from agent_reminiscence.database.models import (
-    LongtermMemoryChunk,
-    RetrievedChunk,
-    RetrievedEntity,
-    RetrievedRelationship,
-    RetrievalResult as FinalRetrievalResult,
+    ShorttermRetrievedChunk,
+    LongtermRetrievedChunk,
+    ShorttermKnowledgeTriplet,
+    LongtermKnowledgeTriplet,
+    RetrievalResultV2,
 )
 from agent_reminiscence.agents.er_extractor import extract_entities
 
@@ -92,6 +93,17 @@ class RelationshipPointer(BaseModel):
     tier: Literal["shortterm", "longterm"] = Field(description="Memory tier")
 
 
+class TripletPointer(BaseModel):
+    """Pointer reference to a knowledge triplet in central storage."""
+
+    pointer_id: str = Field(description="Unique pointer ID (tool_call_id:triplet:id)")
+    subject: str = Field(description="Triplet subject (entity)")
+    predicate: str = Field(description="Triplet predicate (relationship type)")
+    object: str = Field(description="Triplet object (entity)")
+    tier: Literal["shortterm", "longterm"] = Field(description="Memory tier")
+    importance: float = Field(description="Triplet importance score")
+
+
 class RetrievalResult(BaseModel):
     """
     Final retrieval result with pointer-based references.
@@ -113,12 +125,18 @@ class RetrievalResult(BaseModel):
     relationships: List[RelationshipPointer] = Field(
         default_factory=list, description="Pointer references to retrieved relationships"
     )
+    triplets: List[TripletPointer] = Field(
+        default_factory=list, description="Pointer references to knowledge triplets"
+    )
     synthesis: Optional[str] = Field(
         default=None, description="Natural language synthesis (only in synthesis mode)"
     )
     search_strategy: str = Field(description="Brief explanation of search approach and decisions")
     confidence: float = Field(
         default=1.0, ge=0.0, le=1.0, description="Confidence in result relevance (0-1)"
+    )
+    usage_data: Optional[Dict[str, Any]] = Field(
+        default=None, description="Token usage and performance metrics from agent run"
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
@@ -543,6 +561,202 @@ async def search_longterm_entities(
         }
 
 
+async def search_shortterm_triplets(
+    ctx: RunContext[RetrieverDeps],
+    query_text: str,
+    limit: int = 10,
+    shortterm_memory_id: Optional[int] = None,
+    min_importance: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Search shortterm entities and convert relationships to RDF triplets.
+
+    Converts relationships to triplet format (subject-predicate-object)
+    for more efficient knowledge representation.
+
+    Args:
+        query_text: Text query for entity search (entities auto-extracted)
+        limit: Maximum number of entity results (default: 10)
+        shortterm_memory_id: Optional filter by specific shortterm memory ID
+        min_importance: Optional minimum importance threshold
+
+    Returns:
+        Dictionary with entity pointers and triplet pointers
+    """
+    try:
+        tool_call_id = ctx.tool_call_id
+        logger.info(f"[{tool_call_id}] Searching shortterm triplets from: '{query_text[:50]}...'")
+
+        # Extract entity names from query text
+        entity_names = await extract_entities(query_text)
+
+        if not entity_names:
+            logger.info(f"[{tool_call_id}] No entities extracted for triplet search")
+            return {
+                "success": True,
+                "entity_pointers": [],
+                "triplet_pointers": [],
+                "tier": "shortterm",
+            }
+
+        logger.info(f"[{tool_call_id}] Extracted entities for triplets: {entity_names}")
+
+        # Get singleton storage
+        storage = get_central_storage()
+
+        # Use new search_entity_triplets method
+        entities, triplets = await ctx.deps.shortterm_repo.search_entity_triplets(
+            entity_names=entity_names,
+            external_id=ctx.deps.external_id,
+            limit=limit,
+        )
+
+        # Store entities and create pointers
+        entity_pointers = []
+        for entity in entities:
+            pointer_id = storage.store_entity(ctx.deps.external_id, tool_call_id, entity)
+            entity_pointers.append(
+                {
+                    "pointer_id": pointer_id,
+                    "name": entity.name,
+                    "types": entity.types,
+                    "importance": entity.importance,
+                }
+            )
+
+        # Store triplets and create pointers
+        triplet_pointers = []
+        for triplet in triplets:
+            pointer_id = storage.store_triplet(ctx.deps.external_id, tool_call_id, triplet)
+            triplet_pointers.append(
+                {
+                    "pointer_id": pointer_id,
+                    "subject": triplet.subject,
+                    "predicate": triplet.predicate,
+                    "object": triplet.object,
+                    "tier": "shortterm",
+                    "importance": triplet.importance,
+                }
+            )
+
+        logger.info(
+            f"[{tool_call_id}] Found {len(entity_pointers)} entities "
+            f"and {len(triplet_pointers)} triplets in shortterm"
+        )
+        return {
+            "success": True,
+            "entity_pointers": entity_pointers,
+            "triplet_pointers": triplet_pointers,
+            "tier": "shortterm",
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching shortterm triplets: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "entity_pointers": [],
+            "triplet_pointers": [],
+        }
+
+
+async def search_longterm_triplets(
+    ctx: RunContext[RetrieverDeps],
+    query_text: str,
+    limit: int = 10,
+    min_importance: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Search longterm entities and convert relationships to RDF triplets.
+
+    Converts relationships to triplet format for more efficient knowledge representation.
+    Preserves temporal metadata from longterm relationships.
+
+    Args:
+        query_text: Text query for entity search (entities auto-extracted)
+        limit: Maximum number of entity results (default: 10)
+        min_importance: Optional minimum importance threshold
+
+    Returns:
+        Dictionary with entity pointers and triplet pointers
+    """
+    try:
+        tool_call_id = ctx.tool_call_id
+        logger.info(f"[{tool_call_id}] Searching longterm triplets from: '{query_text[:50]}...'")
+
+        # Extract entity names from query text
+        entity_names = await extract_entities(query_text)
+
+        if not entity_names:
+            logger.info(f"[{tool_call_id}] No entities extracted for triplet search")
+            return {
+                "success": True,
+                "entity_pointers": [],
+                "triplet_pointers": [],
+                "tier": "longterm",
+            }
+
+        logger.info(f"[{tool_call_id}] Extracted entities for triplets: {entity_names}")
+
+        # Get singleton storage
+        storage = get_central_storage()
+
+        # Use new search_entity_triplets method
+        entities, triplets = await ctx.deps.longterm_repo.search_entity_triplets(
+            entity_names=entity_names,
+            external_id=ctx.deps.external_id,
+            limit=limit,
+        )
+
+        # Store entities and create pointers
+        entity_pointers = []
+        for entity in entities:
+            pointer_id = storage.store_entity(ctx.deps.external_id, tool_call_id, entity)
+            entity_pointers.append(
+                {
+                    "pointer_id": pointer_id,
+                    "name": entity.name,
+                    "types": entity.types,
+                    "importance": entity.importance,
+                }
+            )
+
+        # Store triplets and create pointers
+        triplet_pointers = []
+        for triplet in triplets:
+            pointer_id = storage.store_triplet(ctx.deps.external_id, tool_call_id, triplet)
+            triplet_pointers.append(
+                {
+                    "pointer_id": pointer_id,
+                    "subject": triplet.subject,
+                    "predicate": triplet.predicate,
+                    "object": triplet.object,
+                    "tier": "longterm",
+                    "importance": triplet.importance,
+                }
+            )
+
+        logger.info(
+            f"[{tool_call_id}] Found {len(entity_pointers)} entities "
+            f"and {len(triplet_pointers)} triplets in longterm"
+        )
+        return {
+            "success": True,
+            "entity_pointers": entity_pointers,
+            "triplet_pointers": triplet_pointers,
+            "tier": "longterm",
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching longterm triplets: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "entity_pointers": [],
+            "triplet_pointers": [],
+        }
+
+
 # ============================================================================
 # AGENT INITIALIZATION
 # ============================================================================
@@ -569,6 +783,8 @@ def _get_retriever_agent() -> Agent[RetrieverDeps, RetrievalResult]:
             Tool(search_longterm_chunks, takes_ctx=True, docstring_format="google"),
             Tool(search_shortterm_entities, takes_ctx=True, docstring_format="google"),
             Tool(search_longterm_entities, takes_ctx=True, docstring_format="google"),
+            Tool(search_shortterm_triplets, takes_ctx=True, docstring_format="google"),
+            Tool(search_longterm_triplets, takes_ctx=True, docstring_format="google"),
         ],
         system_prompt="""You are an expert memory retrieval agent designed for efficient, cost-effective information retrieval.
 
@@ -717,85 +933,117 @@ REMEMBER: Your primary job is EFFICIENT RETRIEVAL, not synthesis. Return pointer
 def resolve_and_format_results(
     retrieval_result: RetrievalResult,
     external_id: str,
-) -> FinalRetrievalResult:
-    """
-    Resolve pointer IDs from storage and format results for return.
+    result_mode: Literal["search", "deep_search"],
+) -> RetrievalResultV2:
+    """Convert pointer-based agent output into RetrievalResultV2."""
 
-    Args:
-        retrieval_result: Agent's output with pointer IDs
-        external_id: Agent identifier to resolve storage from
-
-    Returns:
-        FinalRetrievalResult with resolved data
-    """
-    # Get singleton storage
     storage = get_central_storage()
 
-    # Resolve chunks
-    chunks = []
+    # Resolve chunks by tier
+    shortterm_chunks: List[ShorttermRetrievedChunk] = []
+    longterm_chunks: List[LongtermRetrievedChunk] = []
     for chunk_pointer in retrieval_result.chunks:
         raw_chunk = storage.get_chunk(external_id, chunk_pointer.pointer_id)
-        if raw_chunk:
-            chunk_data = {
-                "id": raw_chunk.id,
-                "content": raw_chunk.content,
-                "tier": chunk_pointer.tier,
-                "score": chunk_pointer.score,
-            }
+        if raw_chunk is None:
+            continue
 
-            # Add tier-specific fields
-            if isinstance(raw_chunk, LongtermMemoryChunk):
-                chunk_data["importance"] = raw_chunk.importance
-                chunk_data["start_date"] = raw_chunk.start_date
-            else:
-                chunk_data["importance"] = None
-                chunk_data["start_date"] = None
+        if chunk_pointer.tier == "shortterm":
+            shortterm_chunks.append(
+                ShorttermRetrievedChunk(
+                    id=raw_chunk.id,
+                    content=raw_chunk.content,
+                    score=chunk_pointer.score,
+                    section_id=getattr(raw_chunk, "section_id", None),
+                    metadata=getattr(raw_chunk, "metadata", {}),
+                )
+            )
+        else:
+            start_date = getattr(raw_chunk, "start_date", None)
+            if start_date is None:
+                logger.warning(
+                    "Longterm chunk %s missing start_date, defaulting to current time", raw_chunk.id
+                )
+                start_date = datetime.utcnow()
 
-            chunks.append(RetrievedChunk(**chunk_data))
-
-    # Resolve entities
-    entities = []
-    for entity_pointer in retrieval_result.entities:
-        raw_entity = storage.get_entity(external_id, entity_pointer.pointer_id)
-        if raw_entity:
-            entities.append(
-                RetrievedEntity(
-                    id=raw_entity.id,
-                    name=raw_entity.name,
-                    types=raw_entity.types,
-                    description=raw_entity.description,
-                    tier=entity_pointer.tier,
-                    importance=raw_entity.importance,
+            longterm_chunks.append(
+                LongtermRetrievedChunk(
+                    id=raw_chunk.id,
+                    content=raw_chunk.content,
+                    score=chunk_pointer.score,
+                    importance=getattr(raw_chunk, "importance", 0.5),
+                    start_date=start_date,
+                    last_updated=getattr(raw_chunk, "last_updated", None),
+                    metadata=getattr(raw_chunk, "metadata", {}),
                 )
             )
 
-    # Resolve relationships
-    relationships = []
-    for rel_pointer in retrieval_result.relationships:
-        raw_rel = storage.get_relationship(external_id, rel_pointer.pointer_id)
-        if raw_rel:
-            relationships.append(
-                RetrievedRelationship(
-                    id=raw_rel.id,
-                    from_entity_name=raw_rel.from_entity_name,
-                    to_entity_name=raw_rel.to_entity_name,
-                    types=raw_rel.types,
-                    description=raw_rel.description,
-                    tier=rel_pointer.tier,
-                    importance=raw_rel.importance,
+    # Resolve triplets by tier
+    shortterm_triplets: List[ShorttermKnowledgeTriplet] = []
+    longterm_triplets: List[LongtermKnowledgeTriplet] = []
+    for triplet_pointer in retrieval_result.triplets:
+        raw_triplet = storage.get_triplet(external_id, triplet_pointer.pointer_id)
+        if raw_triplet is None:
+            continue
+
+        if triplet_pointer.tier == "shortterm":
+            shortterm_triplets.append(
+                ShorttermKnowledgeTriplet(
+                    subject=raw_triplet.subject,
+                    predicate=raw_triplet.predicate,
+                    object=raw_triplet.object,
+                    importance=getattr(raw_triplet, "importance", triplet_pointer.importance),
+                    shortterm_memory_id=getattr(raw_triplet, "shortterm_memory_id", None),
+                    access_count=getattr(raw_triplet, "access_count", 0),
+                    description=getattr(raw_triplet, "description", None),
+                    metadata=getattr(raw_triplet, "metadata", {}),
+                )
+            )
+        else:
+            start_date = getattr(raw_triplet, "start_date", None)
+            if start_date is None:
+                logger.warning(
+                    "Longterm triplet %s missing start_date, defaulting to current time",
+                    raw_triplet.subject,
+                )
+                start_date = datetime.utcnow()
+
+            longterm_triplets.append(
+                LongtermKnowledgeTriplet(
+                    subject=raw_triplet.subject,
+                    predicate=raw_triplet.predicate,
+                    object=raw_triplet.object,
+                    importance=getattr(raw_triplet, "importance", triplet_pointer.importance),
+                    start_date=start_date,
+                    temporal_validity=getattr(raw_triplet, "temporal_validity", None),
+                    access_count=getattr(raw_triplet, "access_count", 0),
+                    description=getattr(raw_triplet, "description", None),
+                    metadata=getattr(raw_triplet, "metadata", {}),
                 )
             )
 
-    # Return FinalRetrievalResult
-    return FinalRetrievalResult(
-        mode=retrieval_result.mode,
-        chunks=chunks,
-        entities=entities,
-        relationships=relationships,
-        synthesis=retrieval_result.synthesis if retrieval_result.mode == "synthesis" else None,
+    metadata = dict(retrieval_result.metadata or {})
+    metadata.setdefault("pointer_counts", {})
+    metadata["pointer_counts"] = {
+        "chunks": len(retrieval_result.chunks),
+        "entities": len(retrieval_result.entities),
+        "relationships": len(retrieval_result.relationships),
+        "triplets": len(retrieval_result.triplets),
+    }
+    if retrieval_result.usage_data:
+        metadata["usage"] = retrieval_result.usage_data
+
+    synthesis = retrieval_result.synthesis if retrieval_result.mode == "synthesis" else None
+
+    return RetrievalResultV2(
+        mode=result_mode,
+        shortterm_chunks=shortterm_chunks,
+        longterm_chunks=longterm_chunks,
+        shortterm_triplets=shortterm_triplets,
+        longterm_triplets=longterm_triplets,
+        synthesis=synthesis,
         search_strategy=retrieval_result.search_strategy,
         confidence=retrieval_result.confidence,
-        metadata=retrieval_result.metadata,
+        metadata=metadata,
     )
 
 
@@ -812,7 +1060,7 @@ async def retrieve_memory(
     active_repo: ActiveMemoryRepository,
     embedding_service: EmbeddingService,
     synthesis: bool = False,
-) -> FinalRetrievalResult:
+) -> RetrievalResultV2:
     """
     Retrieve relevant memory information based on a query.
 
@@ -830,7 +1078,7 @@ async def retrieve_memory(
         synthesis: If True, force synthesis mode regardless of query (default: False)
 
     Returns:
-        FinalRetrievalResult with resolved chunks, entities, relationships, and optional synthesis
+    RetrievalResultV2 with tier-separated chunks/triplets and optional synthesis summary
     """
     logger.info(
         f"Starting memory retrieval for external_id={external_id}, "
@@ -891,15 +1139,29 @@ Execute search and return results in the most efficient format (pointer mode by 
         # Run the agent
         result = await agent.run(user_prompt=user_prompt, deps=deps)
         retrieval_result = result.output
+        usage: RunUsage = result.usage()
+
+        # Extract token usage data
+        usage_data = {
+            "requests": usage.requests,
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+        }
+        retrieval_result.usage_data = usage_data
 
         # Resolve pointers and format output
-        output = resolve_and_format_results(retrieval_result, external_id)
+        result_mode: Literal["search", "deep_search"] = "deep_search" if synthesis else "search"
+        output = resolve_and_format_results(retrieval_result, external_id, result_mode=result_mode)
 
         logger.info(
-            f"Memory retrieval completed: mode={retrieval_result.mode}, "
-            f"confidence={retrieval_result.confidence:.2f}, "
-            f"{len(output.chunks)} chunks, {len(output.entities)} entities, "
-            f"{len(output.relationships)} relationships"
+            "Memory retrieval completed: mode=%s, confidence=%.2f, %s ST chunks, %s LT chunks, "
+            "%s ST triplets, %s LT triplets",
+            result_mode,
+            output.confidence,
+            len(output.shortterm_chunks),
+            len(output.longterm_chunks),
+            len(output.shortterm_triplets),
+            len(output.longterm_triplets),
         )
 
         logger.info(f"Memory retrieval successful")
@@ -909,20 +1171,20 @@ Execute search and return results in the most efficient format (pointer mode by 
     except Exception as e:
         logger.error(f"Error during memory retrieval: {e}", exc_info=True)
         # Return error response
-        return FinalRetrievalResult(
-            mode="synthesis",
-            chunks=[],
-            entities=[],
-            relationships=[],
+        result_mode: Literal["search", "deep_search"] = "deep_search" if synthesis else "search"
+        return RetrievalResultV2(
+            mode=result_mode,
+            shortterm_chunks=[],
+            longterm_chunks=[],
+            shortterm_triplets=[],
+            longterm_triplets=[],
             synthesis=f"Error during memory retrieval: {str(e)}",
             search_strategy="Failed to execute search due to error",
             confidence=0.0,
-            metadata={},
+            metadata={"error": str(e)},
         )
     finally:
         # Clean up storage for this external_id
         storage = get_central_storage()
         storage.clear_external_id(external_id)
         logger.debug(f"Central storage cleared for external_id={external_id}")
-
-

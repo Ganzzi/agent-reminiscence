@@ -84,14 +84,14 @@ class TestAgentMemActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -112,14 +112,14 @@ class TestAgentMemActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 initial_sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -140,14 +140,14 @@ class TestAgentMemActiveMemory:
                     title="Test Memory 1",
                     template_content={
                         "template": {"id": "template-1", "name": "Template 1"},
-                        "sections": [{"id": "summary", "description": "Summary"}]
+                        "sections": [{"id": "summary", "description": "Summary"}],
                     },
                     sections={
                         "summary": {
-                            "content": "Test 1", 
+                            "content": "Test 1",
                             "update_count": 0,
                             "awake_update_count": 0,
-                            "last_updated": None
+                            "last_updated": None,
                         }
                     },
                     metadata={},
@@ -160,14 +160,14 @@ class TestAgentMemActiveMemory:
                     title="Test Memory 2",
                     template_content={
                         "template": {"id": "template-2", "name": "Template 2"},
-                        "sections": [{"id": "summary", "description": "Summary"}]
+                        "sections": [{"id": "summary", "description": "Summary"}],
                     },
                     sections={
                         "summary": {
-                            "content": "Test 2", 
+                            "content": "Test 2",
                             "update_count": 0,
                             "awake_update_count": 0,
-                            "last_updated": None
+                            "last_updated": None,
                         }
                     },
                     metadata={},
@@ -201,14 +201,14 @@ class TestAgentMemActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Updated", 
+                        "content": "Updated",
                         "update_count": 1,
                         "awake_update_count": 1,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     }
                 },
                 metadata={},
@@ -244,14 +244,14 @@ class TestAgentMemActiveMemory:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -283,10 +283,10 @@ sections:
                 template_content=yaml_template,
                 initial_sections={
                     "summary": {
-                        "content": "Test", 
+                        "content": "Test",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     }
                 },
                 metadata={},
@@ -295,7 +295,7 @@ sections:
             assert result == memory
             # Verify the YAML was converted to dict before passing to manager
             call_args = mock_mm_instance.create_active_memory.call_args
-            template_arg = call_args[1]['template_content']
+            template_arg = call_args[1]["template_content"]
             assert isinstance(template_arg, dict)
             assert template_arg["template"]["id"] == "test-template"
 
@@ -313,22 +313,22 @@ sections:
                     "template": {"id": "test-template", "name": "Test Template"},
                     "sections": [
                         {"id": "summary", "description": "Summary section"},
-                        {"id": "new_section", "description": "Dynamically added section"}
-                    ]
+                        {"id": "new_section", "description": "Dynamically added section"},
+                    ],
                 },
                 sections={
                     "summary": {
-                        "content": "Updated content", 
+                        "content": "Updated content",
                         "update_count": 1,
                         "awake_update_count": 1,
-                        "last_updated": "2025-10-14T10:30:00Z"
+                        "last_updated": "2025-10-14T10:30:00Z",
                     },
                     "new_section": {
                         "content": "New section content",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": "2025-10-14T10:30:00Z"
-                    }
+                        "last_updated": "2025-10-14T10:30:00Z",
+                    },
                 },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
@@ -349,16 +349,16 @@ sections:
                 memory_id=memory_id,
                 sections=[
                     {
-                        "section_id": "summary", 
+                        "section_id": "summary",
                         "old_content": "old text",
                         "new_content": "Updated content",
-                        "action": "replace"
+                        "action": "replace",
                     },
                     {
                         "section_id": "new_section",
                         "new_content": "New section content",
-                        "action": "replace"
-                    }
+                        "action": "replace",
+                    },
                 ],
             )
 
@@ -380,14 +380,14 @@ sections:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
-                        "content": "Original content\nNew appended content", 
+                        "content": "Original content\nNew appended content",
                         "update_count": 1,
                         "awake_update_count": 1,
-                        "last_updated": "2025-10-14T10:30:00Z"
+                        "last_updated": "2025-10-14T10:30:00Z",
                     }
                 },
                 metadata={},
@@ -409,9 +409,9 @@ sections:
                 memory_id=memory_id,
                 sections=[
                     {
-                        "section_id": "summary", 
+                        "section_id": "summary",
                         "new_content": "\nNew appended content",
-                        "action": "insert"
+                        "action": "insert",
                     }
                 ],
             )
@@ -429,13 +429,14 @@ class TestAgentMemRetrieval:
         """Test retrieving memories."""
         with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
-            from agent_reminiscence.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResultV2
 
-            result_obj = RetrievalResult(
-                mode="synthesis",
-                chunks=[],
-                entities=[],
-                relationships=[],
+            result_obj = RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
                 synthesis="Retrieved memories about AI and machine learning.",
                 search_strategy="Hybrid search across shortterm and longterm tiers",
                 confidence=0.95,
@@ -443,51 +444,52 @@ class TestAgentMemRetrieval:
             )
 
             mock_mm_instance = MagicMock()
-            mock_mm_instance.retrieve_memories = AsyncMock(return_value=result_obj)
+            mock_mm_instance.deep_search_memories = AsyncMock(return_value=result_obj)
             mock_mm.return_value = mock_mm_instance
 
             agent_mem = AgentMem(config=test_config)
             agent_mem._initialized = True  # Bypass initialization check
             agent_mem._memory_manager = mock_mm_instance  # Set mock manager
 
-            result = await agent_mem.retrieve_memories(
+            result = await agent_mem.deep_search_memories(
                 external_id="test-123",
                 query="Tell me about AI",
             )
 
             assert result == result_obj
-            assert result.mode == "synthesis"
+            assert result.mode == "deep_search"
             assert result.synthesis == "Retrieved memories about AI and machine learning."
             assert result.confidence == 0.95
-            mock_mm_instance.retrieve_memories.assert_called_once()
+            mock_mm_instance.deep_search_memories.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_retrieve_memories_with_filters(self, test_config):
         """Test retrieving memories with search parameters."""
         with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
 
-            from agent_reminiscence.database.models import RetrievalResult
+            from agent_reminiscence.database.models import RetrievalResultV2
 
-            result_obj = RetrievalResult(
-                mode="synthesis",
-                chunks=[],
-                entities=[],
-                relationships=[],
+            result_obj = RetrievalResultV2(
+                mode="deep_search",
+                shortterm_chunks=[],
+                longterm_chunks=[],
+                shortterm_triplets=[],
+                longterm_triplets=[],
                 synthesis="Important memories about AI.",
-                search_strategy="Filtered search with limit=5",
+                search_strategy="Deep filtered search with limit=5",
                 confidence=0.88,
                 metadata={"limit": 5},
             )
 
             mock_mm_instance = MagicMock()
-            mock_mm_instance.retrieve_memories = AsyncMock(return_value=result_obj)
+            mock_mm_instance.deep_search_memories = AsyncMock(return_value=result_obj)
             mock_mm.return_value = mock_mm_instance
 
             agent_mem = AgentMem(config=test_config)
             agent_mem._initialized = True  # Bypass initialization check
             agent_mem._memory_manager = mock_mm_instance  # Set mock manager
 
-            result = await agent_mem.retrieve_memories(
+            result = await agent_mem.deep_search_memories(
                 external_id="test-123",
                 query="AI",
                 limit=5,
@@ -512,14 +514,14 @@ class TestUpsertFunctionality:
                 title="Test Memory",
                 template_content={
                     "template": {"id": "test-template", "name": "Test Template"},
-                    "sections": [{"id": "summary", "description": "Summary section"}]
+                    "sections": [{"id": "summary", "description": "Summary section"}],
                 },
                 sections={
                     "summary": {
                         "content": "Replaced content",
                         "update_count": 2,
                         "awake_update_count": 2,
-                        "last_updated": datetime.now(timezone.utc)
+                        "last_updated": datetime.now(timezone.utc),
                     }
                 },
                 metadata={},
@@ -538,12 +540,14 @@ class TestUpsertFunctionality:
             result = await agent_mem.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                sections=[{
-                    "section_id": "summary",
-                    "new_content": "Replaced content",
-                    "action": "replace",
-                    "old_content": "Old content"
-                }],
+                sections=[
+                    {
+                        "section_id": "summary",
+                        "new_content": "Replaced content",
+                        "action": "replace",
+                        "old_content": "Old content",
+                    }
+                ],
             )
 
             assert result == updated_memory
@@ -565,22 +569,22 @@ class TestUpsertFunctionality:
                     "template": {"id": "test-template", "name": "Test Template"},
                     "sections": [
                         {"id": "summary", "description": "Summary section"},
-                        {"id": "notes", "description": "Notes section"}
-                    ]
+                        {"id": "notes", "description": "Notes section"},
+                    ],
                 },
                 sections={
                     "summary": {
                         "content": "Original content",
                         "update_count": 0,
                         "awake_update_count": 0,
-                        "last_updated": None
+                        "last_updated": None,
                     },
                     "notes": {
                         "content": "New notes content",
                         "update_count": 1,
                         "awake_update_count": 1,
-                        "last_updated": datetime.now(timezone.utc)
-                    }
+                        "last_updated": datetime.now(timezone.utc),
+                    },
                 },
                 metadata={},
                 created_at=datetime.now(timezone.utc),
@@ -598,11 +602,9 @@ class TestUpsertFunctionality:
             result = await agent_mem.update_active_memory_sections(
                 external_id="test-123",
                 memory_id=memory_id,
-                sections=[{
-                    "section_id": "notes",
-                    "new_content": "New notes content",
-                    "action": "insert"
-                }],
+                sections=[
+                    {"section_id": "notes", "new_content": "New notes content", "action": "insert"}
+                ],
             )
 
             assert result == updated_memory
@@ -638,5 +640,3 @@ class TestAgentMemErrorHandling:
 
             # Should not raise error
             assert True
-
-
