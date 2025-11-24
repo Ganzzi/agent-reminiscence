@@ -180,19 +180,22 @@ async def main():
                 logger.info(f"      {status} {section_id}: {count} updates")
         logger.info("")
 
-        # 8. Try retrieval
-        logger.info("8. Searching memories for Agent 1...")
-        result = await agent_mem.retrieve_memories(
-            external_id=agent1_id, query="What is the current status of the dashboard?"
+        # 8. Try deep search (AI-powered search with synthesis)
+        logger.info("8. Deep searching memories for Agent 1...")
+        result = await agent_mem.deep_search_memories(
+            external_id=agent1_id, 
+            query="What is the current status of the dashboard?",
+            synthesis=True
         )
         logger.info(f"✓ Search mode: {result.mode}")
         logger.info(f"   Strategy: {result.search_strategy}")
         logger.info(f"   Confidence: {result.confidence:.2f}")
         if result.synthesis:
             logger.info(f"   Synthesis: {result.synthesis}")
-        logger.info(f"   Chunks found: {len(result.chunks)}")
-        logger.info(f"   Entities found: {len(result.entities)}")
-        logger.info(f"   Relationships found: {len(result.relationships)}")
+        logger.info(f"   Shortterm chunks: {len(result.shortterm_chunks)}")
+        logger.info(f"   Longterm chunks: {len(result.longterm_chunks)}")
+        logger.info(f"   Shortterm triplets: {len(result.shortterm_triplets)}")
+        logger.info(f"   Longterm triplets: {len(result.longterm_triplets)}")
         logger.info("")
 
         logger.info("=== Example Complete ===")
@@ -201,11 +204,12 @@ async def main():
         logger.info("✓ Template-driven active memory with sections")
         logger.info("✓ Section-level update tracking")
         logger.info("✓ Per-section consolidation thresholds")
-        logger.info("✓ Intelligent memory retrieval with AI agent")
+        logger.info("✓ Deep search with AI synthesis (uses LLM tokens)")
         logger.info("\nNext steps:")
         logger.info("- Test consolidation workflow")
         logger.info("- Test promotion to longterm memory")
-        logger.info("- Explore entity/relationship extraction\n")
+        logger.info("- Try search_memories() for faster programmatic search")
+        logger.info("- Set up token usage tracking with set_usage_processor()\n")
 
     except Exception as e:
         logger.error(f"Error during example: {e}", exc_info=True)

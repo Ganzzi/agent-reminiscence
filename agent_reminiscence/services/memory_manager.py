@@ -73,27 +73,7 @@ class UsageProcessor(Protocol):
         ...
 
 
-class LoggingUsageProcessor:
-    """Default usage processor that logs token usage.
 
-    Implements UsageProcessor protocol for structured logging of token consumption.
-    """
-
-    async def process_usage(self, external_id: str, usage: RunUsage) -> None:
-        """
-        Log token usage data in structured format.
-
-        Args:
-            external_id: Agent identifier
-            usage: RunUsage object from pydantic-ai agent
-        """
-        logger.info(
-            f"Agent Token Usage | external_id={external_id} | "
-            f"requests={usage.requests} | "
-            f"input_tokens={usage.input_tokens} | "
-            f"output_tokens={usage.output_tokens} | "
-            f"total_tokens={usage.input_tokens + usage.output_tokens}"
-        )
 
 
 class MemoryManager:
@@ -110,7 +90,7 @@ class MemoryManager:
 
         Args:
             config: Configuration object
-            usage_processor: Optional custom UsageProcessor for token tracking (default: LoggingUsageProcessor)
+            usage_processor: Optional custom UsageProcessor for token tracking (default: None)
         """
         self.config = config
 
@@ -122,7 +102,7 @@ class MemoryManager:
         self.embedding_service = EmbeddingService(config)
 
         # Token usage tracking
-        self.usage_processor = usage_processor or LoggingUsageProcessor()
+        self.usage_processor = usage_processor
 
         # AI Agents
         self.retriever_agent: Optional[MemoryRetrieveAgent] = None
@@ -523,7 +503,7 @@ class MemoryManager:
 
         try:
             # Use existing retrieve_memory function which provides full agent-powered synthesis
-            result = await retrieve_memory(
+            result, usage = await retrieve_memory(
                 query=query,
                 external_id=external_id,
                 shortterm_repo=self.shortterm_repo,
@@ -532,6 +512,9 @@ class MemoryManager:
                 embedding_service=self.embedding_service,
                 synthesis=True,  # Force synthesis for deep search
             )
+
+            # Track usage
+            await self._track_usage(external_id, usage)
 
             logger.info(
                 "Deep search completed: %s ST chunks, %s LT chunks, %s ST triplets, %s LT triplets, "
@@ -642,6 +625,20 @@ class MemoryManager:
         """Ensure manager is initialized."""
         if not self._initialized:
             raise RuntimeError("MemoryManager not initialized. Call initialize() first.")
+
+    async def _track_usage(self, external_id: str, usage: RunUsage) -> None:
+        """
+        Track token usage if a processor is registered.
+
+        Args:
+            external_id: Agent identifier
+            usage: RunUsage object
+        """
+        if self.usage_processor:
+            try:
+                await self.usage_processor.process_usage(external_id, usage)
+            except Exception as e:
+                logger.error(f"Error in usage processor: {e}", exc_info=True)
 
     # =========================================================================
     # CONSOLIDATION WORKFLOWS
@@ -853,7 +850,8 @@ class MemoryManager:
             combined_content = self._extract_content_from_sections(active_memory)
 
             logger.info("Extracting entities and relationships from active memory...")
-            active_extraction = await extract_entities_and_relationships(combined_content)
+            active_extraction, usage = await extract_entities_and_relationships(combined_content)
+            await self._track_usage(external_id, usage)
 
             active_entities = active_extraction.entities if active_extraction else []
             active_relationships = active_extraction.relationships if active_extraction else []
@@ -1136,7 +1134,8 @@ class MemoryManager:
                 try:
                     from agent_reminiscence.agents.memorizer import resolve_conflicts
 
-                    resolution = await resolve_conflicts(conflicts, self.shortterm_repo)
+                    resolution, usage = await resolve_conflicts(conflicts, self.shortterm_repo)
+                    await self._track_usage(external_id, usage)
 
                     logger.info(f"Memorizer agent resolution: {resolution.summary}")
                     logger.info(

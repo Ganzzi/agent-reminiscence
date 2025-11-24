@@ -5,11 +5,12 @@ Complete API documentation for agent-reminiscence v0.2.0
 ## Table of Contents
 
 1. [Core API Methods](#core-api-methods)
-2. [Search Methods](#search-methods)
-3. [Memory Management](#memory-management)
-4. [Data Models](#data-models)
-5. [Error Handling](#error-handling)
-6. [Examples](#examples)
+2. [Token Usage Tracking](#token-usage-tracking) ⭐ NEW
+3. [Search Methods](#search-methods)
+4. [Memory Management](#memory-management)
+5. [Data Models](#data-models)
+6. [Error Handling](#error-handling)
+7. [Examples](#examples)
 
 ## Core API Methods
 
@@ -57,6 +58,84 @@ try:
 except RuntimeError as e:
     print(f"Failed to initialize: {e}")
 ```
+
+---
+
+## Token Usage Tracking ⭐ NEW
+
+Monitor and control LLM token consumption across agent operations.
+
+### set_usage_processor()
+
+Register a custom usage processor to track token usage from agent operations.
+
+**Method**:
+```python
+def set_usage_processor(
+    self,
+    processor: Optional[Callable[[str, RunUsage], Awaitable[None]]]
+) -> None
+```
+
+**Parameters**:
+- `processor` (Callable): Async callback function that receives:
+  - `external_id` (str): Agent identifier
+  - `usage` (RunUsage): Token usage data from pydantic-ai
+  - Returns: None (awaitable)
+
+**Returns**: None
+
+**Use Cases**:
+- Track token consumption for cost analysis
+- Monitor usage patterns by agent
+- Implement custom logging or alerting
+- Build usage dashboards
+
+**Example**:
+
+```python
+from pydantic_ai import RunUsage
+
+# Option 1: Simple logging processor
+async def log_usage(external_id: str, usage: RunUsage) -> None:
+    total = (usage.input_tokens or 0) + (usage.output_tokens or 0)
+    print(f"{external_id}: {total} tokens")
+
+agent_mem = AgentMem()
+await agent_mem.initialize()
+agent_mem.set_usage_processor(log_usage)
+
+# Option 2: Custom tracking class
+class TokenTracker:
+    def __init__(self):
+        self.total_tokens = 0
+    
+    async def process_usage(self, external_id: str, usage: RunUsage) -> None:
+        total = (usage.input_tokens or 0) + (usage.output_tokens or 0)
+        self.total_tokens += total
+        print(f"Total tokens so far: {self.total_tokens}")
+
+tracker = TokenTracker()
+agent_mem.set_usage_processor(tracker.process_usage)
+
+# Option 3: Cost estimation
+class CostTracker:
+    async def process_usage(self, external_id: str, usage: RunUsage) -> None:
+        # Example pricing for Claude 3.5 Sonnet
+        input_cost = (usage.input_tokens or 0) * 0.000003  # $3 per 1M
+        output_cost = (usage.output_tokens or 0) * 0.000015  # $15 per 1M
+        total_cost = input_cost + output_cost
+        print(f"{external_id}: ${total_cost:.6f}")
+
+agent_mem.set_usage_processor(CostTracker().process_usage)
+```
+
+**Note**: Usage is tracked for operations that use AI agents:
+- `deep_search_memories()` - Uses agent for synthesis
+- `retrieve_memories(synthesis=True)` - With synthesis enabled
+- Internal consolidation and entity extraction
+
+Fast operations without AI (`search_memories()`, `create_active_memory()`, etc.) don't consume tokens.
 
 ---
 

@@ -6,12 +6,12 @@ active memories or update existing ones with new information.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, RunUsage
 
 from agent_reminiscence.config import Config
 from agent_reminiscence.database import ActiveMemoryRepository
@@ -185,7 +185,7 @@ Always provide clear reasoning for your decisions."""
         external_id: str,
         message: str,
         context: Optional[str] = None,
-    ) -> MemoryUpdateDecision:
+    ) -> Tuple[MemoryUpdateDecision, RunUsage]:
         """
         Process a message and decide how to update memory.
 
@@ -220,7 +220,7 @@ Always provide clear reasoning for your decisions."""
                 f"reasoning={result.output.reasoning[:100]}..."
             )
 
-            return result.output
+            return result.output, result.usage()
 
         except Exception as e:
             logger.error(f"Memory update agent failed: {e}", exc_info=True)
@@ -229,7 +229,7 @@ Always provide clear reasoning for your decisions."""
                 action="none",
                 new_content="",
                 reasoning=f"Agent execution failed: {str(e)}",
-            )
+            ), RunUsage(requests=0, input_tokens=0, output_tokens=0)
 
     async def execute_decision(
         self,

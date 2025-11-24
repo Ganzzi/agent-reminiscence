@@ -31,7 +31,7 @@ Comprehensive example showing all core features:
 - Managing multiple agents simultaneously
 - Creating active memories with templates
 - Updating sections with automatic tracking
-- Retrieving memories across all tiers
+- Deep search with AI synthesis
 
 **Run it:**
 ```bash
@@ -43,7 +43,45 @@ python examples/basic_usage.py
 - Template-driven memory structure
 - Section-level update tracking
 - Automatic consolidation triggers
-- Memory retrieval
+- AI-powered deep search with synthesis
+
+### `token_usage_tracking.py`
+
+Learn how to monitor LLM token usage across operations:
+
+- Register a usage processor callback
+- Track tokens for deep search operations
+- Calculate estimated costs
+- Implement custom usage tracking logic
+
+**Run it:**
+```bash
+python examples/token_usage_tracking.py
+```
+
+**What it demonstrates:**
+- Setting up usage tracking with `set_usage_processor()`
+- Monitoring token consumption
+- Cost estimation
+- Building custom usage processors
+
+### `search_vs_deep_search.py`
+
+Compare the two retrieval methods:
+
+- `search_memories()` - Fast programmatic search
+- `deep_search_memories()` - AI-powered search with synthesis
+
+**Run it:**
+```bash
+python examples/search_vs_deep_search.py
+```
+
+**What it demonstrates:**
+- Performance differences between methods
+- When to use each method
+- Token cost implications
+- Search result quality comparison
 
 ### `database_test.py`
 
@@ -71,20 +109,28 @@ Basic template for a new example:
 import asyncio
 import logging
 from agent_reminiscence import AgentMem
+from pydantic_ai import RunUsage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+async def usage_processor(external_id: str, usage: RunUsage):
+    """Optional: Track token usage."""
+    logger.info(f"{external_id}: {usage.total_tokens} tokens used")
+
 async def main():
-    agent_reminiscence = AgentMem()
-    await agent_reminiscence.initialize()
+    agent_mem = AgentMem()
+    await agent_mem.initialize()
+    
+    # Optional: Enable usage tracking
+    agent_mem.set_usage_processor(usage_processor)
     
     try:
         # Your code here
         pass
         
     finally:
-        await agent_reminiscence.close()
+        await agent_mem.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

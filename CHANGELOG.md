@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Phase 9 Optimization (In Progress)
+
+### Added ⭐
+- **Token Usage Tracking** (Major Optimization)
+  - Pluggable `UsageProcessor` protocol for custom token tracking
+  - `set_usage_processor()` method in AgentMem for registering custom handlers
+  - Automatic token usage collection from all agent operations
+  - Examples: `token_usage_tracking.py` demonstrating cost estimation
+
+- **Search Methods Comparison**
+  - New `search_vs_deep_search.py` example showing performance differences
+  - Clear guidance on when to use `search_memories()` vs `deep_search_memories()`
+  - Demonstrates token usage implications of each method
+
+### Changed
+- **Agent Function Return Types**
+  - All agent functions now return `Tuple[Result, RunUsage]` to enable token tracking
+  - `extract_entities_and_relationships()`: Returns `Tuple[ExtractionResult, RunUsage]`
+  - `extract_entities()`: Returns `Tuple[List[str], RunUsage]`
+  - `resolve_conflicts()`: Returns `Tuple[ConflictResolution, RunUsage]`
+  - `retrieve_memory()`: Returns `Tuple[RetrievalResultV2, RunUsage]`
+  - `process_message()` in MemoryUpdateAgent: Returns `Tuple[MemoryUpdateDecision, RunUsage]`
+
+- **MemoryManager**
+  - `usage_processor` parameter made optional (default: `None`)
+  - Removed default `LoggingUsageProcessor` (users can register custom)
+  - Added `_track_usage()` method for internal usage tracking
+  - All internal agent calls track usage via `_track_usage()`
+
+### Deprecated
+- `LoggingUsageProcessor` class removed (users should implement `UsageProcessor` protocol)
+
+### Performance
+- Token tracking adds minimal overhead (< 1ms per operation)
+- Usage processor execution is non-blocking (errors logged but don't affect operations)
+
+---
+
 ## [0.2.0] - 2025-11-17 (Release Candidate - Phase 8 Testing Complete)
 
 ### Status

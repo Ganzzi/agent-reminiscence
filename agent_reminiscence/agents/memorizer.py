@@ -6,10 +6,10 @@ extraction and conflict resolution using a Pydantic AI agent.
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext, Tool
+from pydantic_ai import Agent, RunContext, Tool, RunUsage
 
 from agent_reminiscence.config.settings import get_config
 from agent_reminiscence.services.llm_model_provider import model_provider
@@ -412,7 +412,7 @@ def format_conflicts_as_text(conflicts: ConsolidationConflicts) -> str:
 
 async def resolve_conflicts(
     conflicts: ConsolidationConflicts, shortterm_repo: ShorttermMemoryRepository
-) -> ConflictResolution:
+) -> Tuple[ConflictResolution, RunUsage]:
     """
     Resolve conflicts using the memorizer agent.
 
@@ -455,7 +455,7 @@ async def resolve_conflicts(
             f"{len(resolution.relationship_updates)} relationship updates"
         )
 
-        return resolution
+        return resolution, result.usage()
 
     except Exception as e:
         logger.error(f"Error resolving conflicts with agent: {e}", exc_info=True)
@@ -463,6 +463,6 @@ async def resolve_conflicts(
         # Return empty resolution on error
         return ConflictResolution(
             summary=f"Error during conflict resolution: {str(e)}",
-        )
+        ), RunUsage(requests=0, input_tokens=0, output_tokens=0)
 
 

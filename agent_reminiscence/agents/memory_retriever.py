@@ -16,7 +16,7 @@ Two-stage pipeline:
 
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Tuple
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
@@ -930,6 +930,22 @@ REMEMBER: Your primary job is EFFICIENT RETRIEVAL, not synthesis. Return pointer
 # ============================================================================
 
 
+def _normalize_score(score: float) -> float:
+    """
+    Normalize a score to be between 0.0 and 1.0.
+
+    Handles edge cases like negative scores from embeddings by clamping to [0, 1].
+
+    Args:
+        score: Raw score (can be negative)
+
+    Returns:
+        Normalized score between 0.0 and 1.0
+    """
+    # Clamp to [0, 1] range
+    return max(0.0, min(1.0, score))
+
+
 def resolve_and_format_results(
     retrieval_result: RetrievalResult,
     external_id: str,
@@ -952,7 +968,7 @@ def resolve_and_format_results(
                 ShorttermRetrievedChunk(
                     id=raw_chunk.id,
                     content=raw_chunk.content,
-                    score=chunk_pointer.score,
+                    score=_normalize_score(chunk_pointer.score),
                     section_id=getattr(raw_chunk, "section_id", None),
                     metadata=getattr(raw_chunk, "metadata", {}),
                 )
@@ -969,7 +985,7 @@ def resolve_and_format_results(
                 LongtermRetrievedChunk(
                     id=raw_chunk.id,
                     content=raw_chunk.content,
-                    score=chunk_pointer.score,
+                    score=_normalize_score(chunk_pointer.score),
                     importance=getattr(raw_chunk, "importance", 0.5),
                     start_date=start_date,
                     last_updated=getattr(raw_chunk, "last_updated", None),
@@ -1060,7 +1076,7 @@ async def retrieve_memory(
     active_repo: ActiveMemoryRepository,
     embedding_service: EmbeddingService,
     synthesis: bool = False,
-) -> RetrievalResultV2:
+) -> Tuple[RetrievalResultV2, RunUsage]:
     """
     Retrieve relevant memory information based on a query.
 
@@ -1166,7 +1182,7 @@ Execute search and return results in the most efficient format (pointer mode by 
 
         logger.info(f"Memory retrieval successful")
 
-        return output
+        return output, usage
 
     except Exception as e:
         logger.error(f"Error during memory retrieval: {e}", exc_info=True)
@@ -1182,7 +1198,7 @@ Execute search and return results in the most efficient format (pointer mode by 
             search_strategy="Failed to execute search due to error",
             confidence=0.0,
             metadata={"error": str(e)},
-        )
+        ), RunUsage(requests=0, input_tokens=0, output_tokens=0)
     finally:
         # Clean up storage for this external_id
         storage = get_central_storage()

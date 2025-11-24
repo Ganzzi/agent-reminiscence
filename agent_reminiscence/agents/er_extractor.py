@@ -6,9 +6,9 @@ Extracts entities and relationships from text content for memory consolidation.
 
 import logging
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunUsage
 
 from agent_reminiscence.config.settings import get_config
 from agent_reminiscence.services.llm_model_provider import model_provider
@@ -300,7 +300,7 @@ def _get_agent(mode: ExtractionMode = ExtractionMode.ER) -> Agent[None, Extracti
 # =========================================================================
 
 
-async def extract_entities_and_relationships(content: str) -> ExtractionResult:
+async def extract_entities_and_relationships(content: str) -> Tuple[ExtractionResult, RunUsage]:
     """
     Extract entities and relationships from text content.
 
@@ -318,13 +318,13 @@ async def extract_entities_and_relationships(content: str) -> ExtractionResult:
             f"Extracted {len(result.output.entities)} entities and "
             f"{len(result.output.relationships)} relationships"
         )
-        return result.output
+        return result.output, result.usage()
     except Exception as e:
         logger.error(f"Entity/relationship extraction failed: {e}")
         raise
 
 
-async def extract_entities(content: str) -> List[str]:
+async def extract_entities(content: str) -> Tuple[List[str], RunUsage]:
     """
     Extract entity names only from text content.
 
@@ -340,7 +340,7 @@ async def extract_entities(content: str) -> List[str]:
         result = await agent.run(content)
         entity_names = list(set(entity.name for entity in result.output.entities))
         logger.info(f"Extracted {len(entity_names)} unique entity names")
-        return entity_names
+        return entity_names, result.usage()
     except Exception as e:
         logger.error(f"Entity name extraction failed: {e}")
         raise
