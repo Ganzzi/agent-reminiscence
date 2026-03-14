@@ -443,8 +443,18 @@ async def resolve_conflicts(
         # Get the agent instance (lazy initialization)
         agent = _get_memorizer_agent()
 
-        # Run the agent
-        result = await agent.run(user_prompt=conflict_text, deps=deps)
+        # Run through injectable executor path when configured
+        config = get_config()
+        result = await model_provider.run_agent(
+            agent=agent,
+            user_prompt=conflict_text,
+            deps=deps,
+            model_info=config.memorizer_agent_model,
+            metadata={
+                "external_id": conflicts.external_id,
+                "operation": "memorizer",
+            },
+        )
         resolution = result.output
 
         logger.info(f"Agent resolution complete: {resolution.summary}")

@@ -14,6 +14,7 @@ from agent_reminiscence.database.models import (
     RetrievalResultV2,
 )
 from agent_reminiscence.services.memory_manager import MemoryManager
+from agent_reminiscence.services.llm_model_provider import model_provider, LLMExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,20 @@ class AgentMem:
             logger.info("Usage processor registered")
         else:
             logger.warning("Memory manager not available for usage processor registration")
+
+    def set_llm_executor(self, executor: Optional[LLMExecutor]) -> None:
+        """
+        Register an injected LLM executor for backend queue execution.
+
+        When executor is set, backend mode is enabled and model provider
+        initialization without executor is blocked.
+        """
+        model_provider.set_executor(executor)
+        model_provider.set_backend_mode(executor is not None)
+        if executor is None:
+            logger.info("LLM executor cleared; backend mode disabled")
+        else:
+            logger.info("LLM executor registered; backend mode enabled")
 
     async def create_active_memory(
         self,

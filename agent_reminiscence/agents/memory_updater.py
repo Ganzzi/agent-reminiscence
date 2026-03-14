@@ -16,6 +16,7 @@ from pydantic_ai import Agent, RunContext, RunUsage
 from agent_reminiscence.config import Config
 from agent_reminiscence.database import ActiveMemoryRepository
 from agent_reminiscence.database.models import ActiveMemory
+from agent_reminiscence.services.llm_model_provider import model_provider
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +99,11 @@ class MemoryUpdateAgent:
         """
         self.config = config
         self.active_repo = active_repo
+        self._model_info = config.memory_update_agent_model
 
         # Create Pydantic AI agent
         self.agent = Agent(
-            model=config.memory_update_agent_model,
+            model=model_provider.get_model(self._model_info),
             deps_type=MemoryUpdateDeps,
             output_type=MemoryUpdateDecision,
             system_prompt=self._get_system_prompt(),
@@ -213,7 +215,16 @@ Always provide clear reasoning for your decisions."""
             # Run agent
             deps = MemoryUpdateDeps(external_id=external_id, active_repo=self.active_repo)
 
-            result = await self.agent.run(prompt, deps=deps)
+            result = await model_provider.run_agent(
+                agent=self.agent,
+                user_prompt=prompt,
+                deps=deps,
+                model_info=self._model_info,
+                metadata={
+                    "external_id": external_id,
+                    "operation": "updater",
+                },
+            )
 
             logger.info(
                 f"Memory update decision: action={result.output.action}, "

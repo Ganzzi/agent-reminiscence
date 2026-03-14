@@ -312,8 +312,16 @@ async def extract_entities_and_relationships(content: str) -> Tuple[ExtractionRe
     """
     logger.info(f"Extracting entities/relationships from {len(content)} characters")
     try:
+        config = get_config()
         agent = _get_agent(mode=ExtractionMode.ER)
-        result = await agent.run(content)
+        result = await model_provider.run_agent(
+            agent=agent,
+            user_prompt=content,
+            model_info=config.er_extractor_agent_model,
+            metadata={
+                "operation": "extractor",
+            },
+        )
         logger.info(
             f"Extracted {len(result.output.entities)} entities and "
             f"{len(result.output.relationships)} relationships"
@@ -336,8 +344,16 @@ async def extract_entities(content: str) -> Tuple[List[str], RunUsage]:
     """
     logger.info(f"Extracting entity names from {len(content)} characters")
     try:
+        config = get_config()
         agent = _get_agent(mode=ExtractionMode.ENTITY)
-        result = await agent.run(content)
+        result = await model_provider.run_agent(
+            agent=agent,
+            user_prompt=content,
+            model_info=config.er_extractor_agent_model,
+            metadata={
+                "operation": "extractor",
+            },
+        )
         entity_names = list(set(entity.name for entity in result.output.entities))
         logger.info(f"Extracted {len(entity_names)} unique entity names")
         return entity_names, result.usage()

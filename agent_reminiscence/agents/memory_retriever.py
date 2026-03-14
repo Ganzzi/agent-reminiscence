@@ -1152,8 +1152,18 @@ Execute search and return results in the most efficient format (pointer mode by 
         # Get the agent instance (lazy initialization)
         agent = _get_retriever_agent()
 
-        # Run the agent
-        result = await agent.run(user_prompt=user_prompt, deps=deps)
+        # Run through injectable executor path when configured
+        config = get_config()
+        result = await model_provider.run_agent(
+            agent=agent,
+            user_prompt=user_prompt,
+            deps=deps,
+            model_info=config.memory_retrieve_agent_model,
+            metadata={
+                "external_id": external_id,
+                "operation": "retriever",
+            },
+        )
         retrieval_result = result.output
         usage: RunUsage = result.usage()
 
