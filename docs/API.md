@@ -132,7 +132,7 @@ agent_mem.set_usage_processor(CostTracker().process_usage)
 
 **Note**: Usage is tracked for operations that use AI agents:
 - `deep_search_memories()` - Uses agent for synthesis
-- `retrieve_memories(synthesis=True)` - With synthesis enabled
+- `deep_search_memories()` - Uses agent for synthesis
 - Internal consolidation and entity extraction
 
 Fast operations without AI (`search_memories()`, `create_active_memory()`, etc.) don't consume tokens.
@@ -256,35 +256,7 @@ for entity in result.entities:
 
 ---
 
-### retrieve_memories()
 
-Legacy method for backward compatibility. Searches across multiple memory tiers.
-
-**Method**:
-```python
-async def retrieve_memories(
-    external_id: str | UUID | int,
-    query: str,
-    use_active: bool = True,
-    use_shortterm: bool = True,
-    use_longterm: bool = True,
-    synthesis: bool = False
-) -> RetrievalResult
-```
-
-**Parameters**:
-- `external_id`: Agent identifier
-- `query`: Search query
-- `use_active`: Include active memory tier
-- `use_shortterm`: Include shortterm memory tier
-- `use_longterm`: Include longterm memory tier
-- `synthesis`: Generate AI synthesis
-
-**Returns**: `RetrievalResult`
-
-**Note**: Use `search_memories()` or `deep_search_memories()` for new code.
-
----
 
 ## Memory Management
 

@@ -102,7 +102,8 @@ class MemoryManager:
     async def create_active_memory(...) -> ActiveMemory
     async def get_active_memories(...) -> List[ActiveMemory]
     async def update_active_memory(...) -> ActiveMemory
-    async def retrieve_memories(...) -> RetrievalResult
+    async def search_memories(...) -> RetrievalResult
+    async def deep_search_memories(...) -> RetrievalResult
     
     # Internal consolidation (triggered automatically)
     async def _consolidate_to_shortterm(...)
@@ -121,8 +122,8 @@ class MemoryManager:
 
 2. **Memory Retrieval**:
    ```
-   User → AgentMem.retrieve_memories()
-     → MemoryManager.retrieve_memories()
+   User → AgentMem.search_memories()
+     → MemoryManager.search_memories()
        → Memory Retrieve Agent
          → Search repositories (Active, Shortterm, Longterm)
            → PostgreSQL (vector + BM25 search)
@@ -527,7 +528,7 @@ async def handle_call_tool(self, tool_name: str, args: dict) -> dict:
 ```
 ┌──────────────────────────────────────────────────────┐
 │ 1. User requests information                         │
-│    result = agent_reminiscence.retrieve_memories(query)       │
+│    result = agent_reminiscence.search_memories(query)         │
 └─────────────────┬────────────────────────────────────┘
                   │
                   ↓

@@ -2,9 +2,11 @@
 Core AgentMem class - Main interface for memory management.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable, Union
 from uuid import UUID
 import logging
+
+from pydantic_ai.usage import RunUsage
 
 from agent_reminiscence.config import Config, get_config, set_config
 from agent_reminiscence.database.models import (
@@ -27,6 +29,7 @@ class AgentMem:
     1. create_active_memory(external_id, ...) - Create new working memory
     2. get_active_memories(external_id) - Get all working memories
     3. update_active_memory_sections(external_id, memory_id, sections) - Update multiple sections
+    3. update_active_memory(external_id, memory_id, sections) - Update multiple sections (alias: update_active_memory_sections)
     4. delete_active_memory(external_id, memory_id) - Delete working memory
     5. search_memories(external_id, query, ...) - Fast search (< 200ms, no agent)
     6. deep_search_memories(external_id, query, ...) - Comprehensive search with AI synthesis
@@ -54,7 +57,7 @@ class AgentMem:
         )
 
         # Retrieve information
-        results = await agent_mem.retrieve_memories(
+        results = await agent_mem.search_memories(
             external_id="agent-123",
             query="How do I implement authentication?"
         )
@@ -105,7 +108,7 @@ class AgentMem:
         self._initialized = True
         logger.info("AgentMem initialization complete")
 
-    def set_usage_processor(self, processor) -> None:
+    def set_usage_processor(self, processor: Callable[[str, RunUsage], Any]) -> None:
         """
         Register a callback to process LLM token usage from agent operations.
 
@@ -365,6 +368,27 @@ class AgentMem:
             memory_id=memory_id,
             sections=sections,
         )
+
+    async def update_active_memory(
+        self,
+        external_id: str | UUID | int,
+        memory_id: int,
+        sections: List[Dict[str, Any]],
+    ) -> ActiveMemory:
+        """
+        Alias for update_active_memory_sections.
+
+        Upsert multiple sections in an active memory.
+
+        Args:
+            external_id: Unique identifier for the agent
+            memory_id: ID of the memory to update
+            sections: List of section updates
+
+        Returns:
+            Updated ActiveMemory object
+        """
+        return await self.update_active_memory_sections(external_id, memory_id, sections)
 
     async def delete_active_memory(
         self,
