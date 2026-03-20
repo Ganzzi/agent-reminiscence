@@ -12,6 +12,11 @@ from agent_reminiscence.database.models import (
     ActiveMemory,
     ShorttermMemory,
     LongtermMemory,
+    # Consolidation models
+    ConsolidationConflicts,
+    ConflictSection,
+    ConflictEntityDetail,
+    ConflictRelationshipDetail,
     # Legacy (v0.1.x) - Deprecated
     RetrievalResult,
     RetrievedChunk,
@@ -39,6 +44,11 @@ __all__ = [
     # Memory tier models
     "ShorttermMemory",
     "LongtermMemory",
+    # Consolidation models
+    "ConsolidationConflicts",
+    "ConflictSection",
+    "ConflictEntityDetail",
+    "ConflictRelationshipDetail",
     # Retrieval result models (v0.2.0 - recommended)
     "RetrievalResultV2",
     "ShorttermKnowledgeTriplet",
