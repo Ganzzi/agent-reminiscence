@@ -4,6 +4,7 @@ Core AgentMem class - Main interface for memory management.
 
 from typing import List, Optional, Dict, Any, Callable, Union
 from uuid import UUID
+from datetime import datetime, timezone
 import logging
 
 from pydantic_ai.usage import RunUsage
@@ -12,6 +13,7 @@ from agent_reminiscence.config import Config, get_config, set_config
 from agent_reminiscence.database.models import (
     ActiveMemory,
     RetrievalResultV2,
+    ConsolidationConflicts,
 )
 from agent_reminiscence.services.memory_manager import MemoryManager
 from agent_reminiscence.services.llm_model_provider import model_provider, LLMExecutor
@@ -583,6 +585,103 @@ class AgentMem:
             query=query,
             limit=limit,
         )
+
+    async def consolidate_and_return_conflicts(
+        self,
+        external_id: str | UUID | int,
+        memory_id: int,
+    ) -> ConsolidationConflicts:
+        """
+        Consolidate active memory to shortterm and return detected conflicts.
+
+        This triggers the full consolidation workflow:
+        1. Extract updated sections from active memory
+        2. Create or find shortterm memory
+        3. Chunk content and generate embeddings
+        4. Detect section conflicts (when existing chunks match sections being updated)
+        5. Extract and merge entities/relationships
+        6. Return comprehensive conflict report for downstream processing
+
+        The consolidation process does NOT automatically resolve conflicts.
+        Conflicts are returned for a resolution agent to decide on merging/updating.
+
+        Workflow:
+        - Sections with update_count > 0 are processed
+        - New chunks are created for sections without existing chunks
+        - Existing chunks in same section trigger conflict tracking
+        - Entities and relationships are extracted and merged (with conflict detection)
+        - All conflicts are aggregated and returned
+
+        Args:
+            external_id: Unique identifier for the agent (UUID, string, or int)
+            memory_id: ID of the active memory to consolidate
+
+        Returns:
+            ConsolidationConflicts object containing:
+                - external_id: Agent identifier
+                - active_memory_id: Source active memory ID
+                - shortterm_memory_id: Target shortterm memory ID
+                - sections: List of ConflictSection (section conflicts)
+                - entity_conflicts: List of ConflictEntityDetail (entity merges)
+                - relationship_conflicts: List of ConflictRelationshipDetail (relationship merges)
+                - total_conflicts: Count of all conflicts
+                - created_at: Timestamp of consolidation run
+
+        Raises:
+            RuntimeError: If not initialized
+            ValueError: If memory_id not found
+
+        Example:
+            ```python
+            # Trigger consolidation and get conflicts
+            conflicts = await agent_mem.consolidate_and_return_conflicts(
+                external_id="agent-123",
+                memory_id=42
+            )
+
+            print(f"Consolidation completed")
+            print(f"Total conflicts: {len(conflicts.sections) + len(conflicts.entity_conflicts)}")
+
+            for section_conflict in conflicts.sections:
+                print(f"Section '{section_conflict.section_id}' has {len(section_conflict.existing_chunks)} existing chunks")
+                # This section has both new content AND existing chunks to reconcile
+
+            for entity_conflict in conflicts.entity_conflicts:
+                print(f"Entity '{entity_conflict.name}': merged types {entity_conflict.shortterm_types} + {entity_conflict.active_types}")
+
+            # Send conflicts to resolution agent for decision-making
+            resolved = await resolution_agent.resolve(conflicts)
+            ```
+        """
+        self._ensure_initialized()
+        external_id_str = str(external_id)
+
+        logger.info(f"Starting consolidation for {external_id_str}, memory {memory_id}")
+        conflicts = await self._memory_manager._consolidate_to_shortterm(
+            external_id=external_id_str,
+            active_memory_id=memory_id,
+        )
+
+        if conflicts is None:
+            # Consolidation failed or found no updates
+            logger.warning(f"Consolidation returned None for memory {memory_id}")
+            # Return empty conflicts object
+            conflicts = ConsolidationConflicts(
+                external_id=external_id_str,
+                active_memory_id=memory_id,
+                shortterm_memory_id=0,
+                created_at=datetime.now(timezone.utc),
+            )
+
+        logger.info(
+            f"Consolidation complete: {len(conflicts.sections)} section conflicts, "
+            f"{len(conflicts.entity_conflicts)} entity conflicts, "
+            f"{len(conflicts.relationship_conflicts)} relationship conflicts"
+        )
+
+        return conflicts
+
+
 
     async def close(self) -> None:
         """
