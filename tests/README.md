@@ -14,20 +14,27 @@ This test suite provides:
 
 ```
 tests/
-├── conftest.py                        # Fixtures and test configuration
-├── pytest.ini                         # Pytest settings (in parent dir)
-├── test_config.py                     # Configuration tests
-├── test_models.py                     # Pydantic model tests
-├── test_postgres_manager.py           # PostgreSQL manager tests
-├── test_neo4j_manager.py              # Neo4j manager tests
-├── test_active_memory_repository.py   # Active memory repo tests
-├── test_shortterm_memory_repository.py # Shortterm memory repo tests
-├── test_longterm_memory_repository.py  # Longterm memory repo tests
-├── test_embedding_service.py          # Embedding service tests
-├── test_memory_manager.py             # Memory manager tests
-├── test_core.py                       # AgentMem core tests
-├── test_agents.py                     # Pydantic AI agent tests
-└── test_integration.py                # End-to-end integration tests
+├── conftest.py
+├── unit/                             # Mocked / isolated tests (PR gate)
+│   ├── test_config.py
+│   ├── test_models.py
+│   ├── test_postgres_manager.py
+│   ├── test_neo4j_manager.py
+│   ├── test_active_memory_repository.py
+│   ├── test_shortterm_memory_repository.py
+│   ├── test_longterm_memory_repository.py
+│   ├── test_embedding_service.py
+│   ├── test_memory_manager.py
+│   ├── test_core.py
+│   └── ...
+├── integration/                      # Real DB / external integration tests
+│   ├── test_integration.py
+│   ├── test_er_extractor.py
+│   └── ...
+└── e2e/                              # Full workflow and MCP end-to-end tests
+    ├── test_mcp_client.py
+    ├── test_streamlit_integration.py
+    └── ...
 ```
 
 ## Running Tests

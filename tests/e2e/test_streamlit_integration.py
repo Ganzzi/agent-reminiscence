@@ -11,8 +11,10 @@ import yaml
 from pathlib import Path
 import sys
 
+pytest.importorskip("streamlit")
+
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from streamlit_app.services.memory_service import MemoryService
 from streamlit_app.services.template_service import TemplateService

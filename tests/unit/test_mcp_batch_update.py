@@ -7,6 +7,7 @@ Tests the update_memory_sections tool in the MCP server.
 import pytest
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent_reminiscence import AgentMem
@@ -115,8 +116,11 @@ class TestMCPBatchUpdate:
             ],
         }
 
-        # Call handler
-        result = await _handle_update_memory_sections(mock_agent_mem, arguments)
+        with patch(
+            "agent_reminiscence.config.get_config",
+            return_value=SimpleNamespace(avg_section_update_count_for_consolidation=5),
+        ):
+            result = await _handle_update_memory_sections(mock_agent_mem, arguments)
 
         # Verify result
         assert len(result) == 1
@@ -364,7 +368,11 @@ class TestMCPBatchUpdate:
             ],
         }
 
-        result = await _handle_update_memory_sections(mock_agent_mem, arguments)
+        with patch(
+            "agent_reminiscence.config.get_config",
+            return_value=SimpleNamespace(avg_section_update_count_for_consolidation=5),
+        ):
+            result = await _handle_update_memory_sections(mock_agent_mem, arguments)
         response = json.loads(result[0].text)
 
         # Check consolidation info

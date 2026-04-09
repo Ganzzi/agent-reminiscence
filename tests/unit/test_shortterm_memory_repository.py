@@ -226,7 +226,7 @@ class TestShorttermMemoryRepository:
             "relationships_out": [],
         }.get(key)
 
-        mock_result.fetch = AsyncMock(return_value=[mock_record])
+        mock_result.__aiter__.return_value = [mock_record]
         mock_session.run = AsyncMock(return_value=mock_result)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)

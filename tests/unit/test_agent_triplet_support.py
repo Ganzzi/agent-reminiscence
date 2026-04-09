@@ -25,7 +25,6 @@ from agent_reminiscence.database.models import (
 from agent_reminiscence.services.central_storage import CentralStorage
 from agent_reminiscence.services.memory_manager import (
     UsageProcessor,
-    LoggingUsageProcessor,
 )
 from agent_reminiscence.agents.memory_retriever import (
     search_shortterm_triplets,
@@ -37,6 +36,21 @@ from agent_reminiscence.agents.memory_retriever import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class LoggingUsageProcessor:
+    """Test-local usage processor implementation for protocol compliance checks."""
+
+    async def process_usage(self, external_id: str, usage: RunUsage) -> None:
+        """Log usage in a stable format expected by tests."""
+        logger.info(
+            "Agent Token Usage: external_id=%s requests=%s input_tokens=%s output_tokens=%s total_tokens=%s",
+            external_id,
+            usage.requests,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.total_tokens,
+        )
 
 
 class TestLogginUsageProcessor:

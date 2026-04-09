@@ -599,6 +599,7 @@ two blockers related to authentication that need attention."
 
 Full documentation available at [docs/](docs/):
 
+- **[Development Guide](docs/development.md)** - Setup, testing, and CI workflow
 - **[Quick Start](docs/QUICKSTART.md)** - Get running in 5 minutes
 - **[API Reference](docs/API.md)** - Complete method documentation
 - **[Architecture](docs/ARCHITECTURE.md)** - System design deep dive
@@ -610,18 +611,13 @@ Full documentation available at [docs/](docs/):
 
 ### Running Tests
 
+Use the canonical development workflow in [docs/development.md](docs/development.md).
+
+Quick check:
+
 ```bash
-# Install dev dependencies
-pip install "agent-reminiscence[dev]"
-
-# Run all tests
-pytest tests/
-
-# Run with coverage
-pytest --cov=agent_reminiscence tests/
-
-# Run specific test file
-pytest tests/test_core.py
+uv sync --all-groups --extra dev --python 3.12
+uv run --extra dev --python 3.12 pytest -m "not integration and not e2e" -q
 ```
 
 ### Project Structure

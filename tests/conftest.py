@@ -4,6 +4,7 @@ Pytest configuration and fixtures for agent_mem tests.
 
 import asyncio
 import os
+from pathlib import Path
 import pytest
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Generator
@@ -17,6 +18,19 @@ from agent_reminiscence.database.repositories.shortterm_memory import ShorttermM
 from agent_reminiscence.database.repositories.longterm_memory import LongtermMemoryRepository
 from agent_reminiscence.services.embedding import EmbeddingService
 from agent_reminiscence.services.memory_manager import MemoryManager
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Apply default test markers based on the file path."""
+    for item in items:
+        path = Path(str(item.fspath))
+
+        if "e2e" in path.parts:
+            item.add_marker(pytest.mark.e2e)
+        elif "integration" in path.parts:
+            item.add_marker(pytest.mark.integration)
+        elif "unit" in path.parts:
+            item.add_marker(pytest.mark.unit)
 
 
 # ============================================================================

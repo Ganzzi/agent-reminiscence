@@ -6,12 +6,10 @@ import sys
 from pathlib import Path
 import asyncio
 
-# Add parent directory to path
-root_dir = Path(__file__).parent.parent
+# Add project root and MCP package directory to path
+root_dir = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(root_dir))
-
-# Change to agent_mem_mcp directory for imports
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(root_dir / "agent_reminiscence_mcp"))
 
 import mcp.types as types
 from mcp.server.lowlevel import Server

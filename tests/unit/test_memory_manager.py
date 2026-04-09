@@ -638,7 +638,7 @@ class TestMemoryManagerRetrieval:
             manager.longterm_repo = MagicMock()
             manager.embedding_service = MagicMock()
 
-            # Mock retrieve_memory function to return a RetrievalResultV2
+            # Mock retrieve_memory function to return (result, usage)
             mock_result = RetrievalResultV2(
                 mode="deep_search",
                 shortterm_chunks=[],
@@ -650,7 +650,8 @@ class TestMemoryManagerRetrieval:
                 confidence=0.9,
                 metadata={"test": True},
             )
-            mock_retrieve.return_value = mock_result
+            mock_usage = MagicMock()
+            mock_retrieve.return_value = (mock_result, mock_usage)
 
             result = await manager.deep_search_memories(query="test query", external_id="test-123")
 
