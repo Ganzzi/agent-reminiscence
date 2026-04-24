@@ -1,7 +1,9 @@
 # AgentMem Streamlit UI
 
-**Status**: ✅ **Production Ready** (Phases 1-7 Complete)  
-**Version**: 1.0  
+> **Note:** This Streamlit app is provided for demo/debugging purposes and is **not actively maintained**. It may not reflect the latest API changes in the core `agent_reminiscence` package. Use at your own risk.
+
+**Status**: ✅ **Production Ready** (Phases 1-7 Complete)
+**Version**: 1.0
 **Last Updated**: October 3, 2025
 
 ---
