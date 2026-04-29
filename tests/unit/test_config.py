@@ -30,13 +30,13 @@ class TestConfig:
 
         # Agent model defaults
         assert config.memory_update_agent_model == os.getenv(
-            "MEMORY_UPDATE_AGENT_MODEL", "google-gla:gemini-2.0-flash"
+            "MEMORY_UPDATE_AGENT_MODEL", "google:gemini-2.5-flash"
         )
         assert config.memorizer_agent_model == os.getenv(
-            "MEMORIZER_AGENT_MODEL", "google-gla:gemini-2.0-flash"
+            "MEMORIZER_AGENT_MODEL", "google:gemini-2.5-flash"
         )
         assert config.memory_retrieve_agent_model == os.getenv(
-            "MEMORY_RETRIEVE_AGENT_MODEL", "google-gla:gemini-2.0-flash"
+            "MEMORY_RETRIEVE_AGENT_MODEL", "google:gemini-2.5-flash"
         )
 
         # Agent settings defaults

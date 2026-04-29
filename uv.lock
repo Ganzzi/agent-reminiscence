@@ -24,15 +24,11 @@ name = "agent-reminiscence"
 version = "0.1.3"
 source = { editable = "." }
 dependencies = [
-    { name = "asyncio" },
     { name = "neo4j" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "psqlpy" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
     { name = "pydantic-ai-slim", extra = ["anthropic", "google", "openai"] },
-    { name = "requests" },
 ]
 
 [package.optional-dependencies]
@@ -61,11 +57,13 @@ streamlit = [
 dev = [
     { name = "coverage" },
     { name = "iniconfig" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-json-report" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncio", specifier = ">=3.4.3" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.0.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
@@ -73,7 +71,6 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "neo4j", specifier = ">=5.16.0" },
-    { name = "numpy", specifier = ">=1.24.0" },
     { name = "psqlpy", specifier = ">=0.11.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pydantic-ai", specifier = ">=0.3.4" },
@@ -82,7 +79,6 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "requests", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "streamlit", marker = "extra == 'streamlit'", specifier = ">=1.50.0" },
 ]
@@ -92,6 +88,9 @@ provides-extras = ["dev", "mcp", "docs", "streamlit"]
 dev = [
     { name = "coverage", specifier = ">=7.10.7" },
     { name = "iniconfig", specifier = ">=2.1.0" },
+    { name = "pytest-asyncio", specifier = ">=1.2.0" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "pytest-json-report", specifier = ">=1.5.0" },
 ]
 
 [[package]]
@@ -277,15 +276,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a5/ae/136395dfbfe00dfc94da3f3e136d0b13f394cba8f4841120e34226265780/async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3", size = 9274, upload-time = "2024-11-06T16:41:39.6Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fe/ba/e2081de779ca30d473f21f5b30e0e737c438205440784c7dfc81efc2b029/async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c", size = 6233, upload-time = "2024-11-06T16:41:37.9Z" },
-]
-
-[[package]]
-name = "asyncio"
-version = "4.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/71/ea/26c489a11f7ca862d5705db67683a7361ce11c23a7b98fc6c2deaeccede2/asyncio-4.0.0.tar.gz", hash = "sha256:570cd9e50db83bc1629152d4d0b7558d6451bb1bfd5dfc2e935d96fc2f40329b", size = 5371, upload-time = "2025-08-05T02:51:46.605Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/64/eff2564783bd650ca25e15938d1c5b459cda997574a510f7de69688cb0b4/asyncio-4.0.0-py3-none-any.whl", hash = "sha256:c1eddb0659231837046809e68103969b2bef8b0400d59cfa6363f6b5ed8cc88b", size = 5555, upload-time = "2025-08-05T02:51:45.767Z" },
 ]
 
 [[package]]
@@ -2872,6 +2862,31 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/f7/c933acc76f5208b3b00089573cf6a2bc26dc80a8aece8f52bb7d6b1855ca/pytest_cov-7.0.0.tar.gz", hash = "sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1", size = 54328, upload-time = "2025-09-09T10:57:02.113Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/49/1377b49de7d0c1ce41292161ea0f721913fa8722c19fb9c1e3aa0367eecb/pytest_cov-7.0.0-py3-none-any.whl", hash = "sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861", size = 22424, upload-time = "2025-09-09T10:57:00.695Z" },
+]
+
+[[package]]
+name = "pytest-json-report"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "pytest-metadata" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/d3/765dae9712fcd68d820338908c1337e077d5fdadccd5cacf95b9b0bea278/pytest-json-report-1.5.0.tar.gz", hash = "sha256:2dde3c647851a19b5f3700729e8310a6e66efb2077d674f27ddea3d34dc615de", size = 21241, upload-time = "2022-03-15T21:03:10.2Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/35/d07400c715bf8a88aa0c1ee9c9eb6050ca7fe5b39981f0eea773feeb0681/pytest_json_report-1.5.0-py3-none-any.whl", hash = "sha256:9897b68c910b12a2e48dd849f9a284b2c79a732a8a9cb398452ddd23d3c8c325", size = 13222, upload-time = "2022-03-15T21:03:08.65Z" },
+]
+
+[[package]]
+name = "pytest-metadata"
+version = "3.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/85/8c969f8bec4e559f8f2b958a15229a35495f5b4ce499f6b865eac54b878d/pytest_metadata-3.1.1.tar.gz", hash = "sha256:d2a29b0355fbc03f168aa96d41ff88b1a3b44a3b02acbe491801c98a048017c8", size = 9952, upload-time = "2024-02-12T19:38:44.887Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/43/7e7b2ec865caa92f67b8f0e9231a798d102724ca4c0e1f414316be1c1ef2/pytest_metadata-3.1.1-py3-none-any.whl", hash = "sha256:c8e0844db684ee1c798cfa38908d20d67d0463ecb6137c72e91f418558dd5f4b", size = 11428, upload-time = "2024-02-12T19:38:42.531Z" },
 ]
 
 [[package]]

@@ -456,7 +456,7 @@ class TestErrorRecovery:
     @pytest.mark.asyncio
     async def test_database_connection_error(self, test_config):
         """Test handling of database connection errors."""
-        with patch("agent_reminiscence.database.PostgreSQLManager") as mock_pg:
+        with patch("agent_reminiscence.services.memory_manager.PostgreSQLManager") as mock_pg:
             mock_pg_instance = MagicMock()
             mock_pg_instance.initialize = AsyncMock(side_effect=Exception("Connection failed"))
             mock_pg.return_value = mock_pg_instance
