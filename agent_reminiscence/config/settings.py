@@ -97,6 +97,21 @@ class Config(BaseModel):
     )
     vector_dimension: int = Field(default_factory=lambda: int(os.getenv("VECTOR_DIMENSION", "768")))
 
+    # Multi-Provider Embedding Configuration
+    embedding_provider: str = Field(
+        default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "ollama"),
+        description="Embedding provider: ollama, openai, or google",
+    )
+    # Model names per provider (can override embedding_model for specific providers)
+    openai_embedding_model: str = Field(
+        default_factory=lambda: os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        description="OpenAI embedding model name",
+    )
+    google_embedding_model: str = Field(
+        default_factory=lambda: os.getenv("GOOGLE_EMBEDDING_MODEL", "text-embedding-004"),
+        description="Google embedding model name",
+    )
+
     # Agent Model Configuration
     er_extractor_agent_model: str = Field(
         default_factory=lambda: os.getenv("ER_EXTRACTOR_AGENT_MODEL", "google:gemini-2.5-flash")
