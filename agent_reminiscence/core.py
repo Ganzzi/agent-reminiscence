@@ -681,7 +681,301 @@ class AgentMem:
 
         return conflicts
 
+    async def update_shortterm_chunk(
+        self,
+        external_id: str | UUID | int,
+        chunk_id: int,
+        new_content: str,
+    ) -> dict:
+        """
+        Update a shortterm memory chunk's content.
 
+        Validates external_id ownership before modifying. This ensures tenant
+        isolation by checking the chunk belongs to the specified agent.
+
+        Args:
+            external_id: Unique identifier for the agent (UUID, string, or int)
+            chunk_id: ID of the chunk to update
+            new_content: New content for the chunk
+
+        Returns:
+            Dict with updated chunk fields (id, content, metadata)
+
+        Raises:
+            RuntimeError: If not initialized
+            ValueError: If chunk not found or ownership validation fails
+
+        Example:
+            ```python
+            result = await agent_mem.update_shortterm_chunk(
+                external_id="agent-123",
+                chunk_id=42,
+                new_content="Updated content here"
+            )
+            print(f"Updated chunk {result['id']}")
+            ```
+        """
+        self._ensure_initialized()
+        external_id_str = str(external_id)
+
+        logger.info(f"Updating shortterm chunk {chunk_id} for {external_id_str}")
+
+        # Get chunk first to validate ownership
+        chunk = await self._memory_manager.shortterm_repo.get_chunk_by_id(chunk_id)
+        if chunk is None:
+            raise ValueError(f"Chunk {chunk_id} not found")
+
+        if chunk.external_id != external_id_str:
+            raise ValueError(
+                f"Ownership validation failed: chunk {chunk_id} belongs to {chunk.external_id}, not {external_id_str}"
+            )
+
+        # Update the chunk
+        updated = await self._memory_manager.shortterm_repo.update_chunk(
+            chunk_id=chunk_id,
+            content=new_content,
+        )
+
+        if updated is None:
+            raise ValueError(f"Failed to update chunk {chunk_id}")
+
+        return {
+            "id": updated.id,
+            "shortterm_memory_id": updated.shortterm_memory_id,
+            "content": updated.content,
+            "metadata": updated.metadata if hasattr(updated, "metadata") else {},
+        }
+
+    async def create_shortterm_chunk(
+        self,
+        external_id: str | UUID | int,
+        memory_id: int,
+        content: str,
+        chunk_order: int,
+        section_id: str | None = None,
+    ) -> dict:
+        """
+        Create a new shortterm memory chunk.
+
+        Validates external_id ownership before creating. The chunk is added
+        to the specified shortterm memory.
+
+        Args:
+            external_id: Unique identifier for the agent (UUID, string, or int)
+            memory_id: ID of the shortterm memory to add chunk to
+            content: Content for the new chunk
+            chunk_order: Order position of the chunk
+            section_id: Optional section reference from active memory
+
+        Returns:
+            Dict with created chunk fields (id, content, metadata)
+
+        Raises:
+            RuntimeError: If not initialized
+            ValueError: If memory not found or ownership validation fails
+
+        Example:
+            ```python
+            result = await agent_mem.create_shortterm_chunk(
+                external_id="agent-123",
+                memory_id=5,
+                content="New chunk content",
+                chunk_order=1
+            )
+            print(f"Created chunk {result['id']}")
+            ```
+        """
+        self._ensure_initialized()
+        external_id_str = str(external_id)
+
+        logger.info(f"Creating shortterm chunk for memory {memory_id}, external_id {external_id_str}")
+
+        # Validate memory ownership
+        memory = await self._memory_manager.shortterm_repo.get_memory_by_id(memory_id)
+        if memory is None:
+            raise ValueError(f"Shortterm memory {memory_id} not found")
+
+        if memory.external_id != external_id_str:
+            raise ValueError(
+                f"Ownership validation failed: memory {memory_id} belongs to {memory.external_id}, not {external_id_str}"
+            )
+
+        # Create the chunk
+        created = await self._memory_manager.shortterm_repo.create_chunk(
+            shortterm_memory_id=memory_id,
+            external_id=external_id_str,
+            content=content,
+            section_id=section_id,
+            metadata={"chunk_order": chunk_order},
+        )
+
+        return {
+            "id": created.id,
+            "shortterm_memory_id": created.shortterm_memory_id,
+            "content": created.content,
+            "section_id": created.section_id,
+            "metadata": created.metadata if hasattr(created, "metadata") else {},
+        }
+
+    async def update_shortterm_entity(
+        self,
+        external_id: str | UUID | int,
+        entity_id: int,
+        name: str | None = None,
+        types: list[str] | None = None,
+        description: str | None = None,
+        importance: float | None = None,
+    ) -> dict:
+        """
+        Update a shortterm entity's attributes.
+
+        Validates external_id ownership before modifying. Only updates fields
+        that are provided (None values are ignored).
+
+        Args:
+            external_id: Unique identifier for the agent (UUID, string, or int)
+            entity_id: Neo4j elementId of the entity
+            name: New name (optional)
+            types: New types list (optional)
+            description: New description (optional)
+            importance: New importance score (optional)
+
+        Returns:
+            Dict with updated entity fields
+
+        Raises:
+            RuntimeError: If not initialized
+            ValueError: If entity not found or ownership validation fails
+
+        Example:
+            ```python
+            result = await agent_mem.update_shortterm_entity(
+                external_id="agent-123",
+                entity_id=42,
+                types=["Person", "Developer"],
+                importance=0.9
+            )
+            print(f"Updated entity {result['id']}")
+            ```
+        """
+        self._ensure_initialized()
+        external_id_str = str(external_id)
+
+        logger.info(f"Updating shortterm entity {entity_id} for {external_id_str}")
+
+        # Get entity first to validate ownership
+        entity = await self._memory_manager.shortterm_repo.get_entity(entity_id)
+        if entity is None:
+            raise ValueError(f"Entity {entity_id} not found")
+
+        if entity.external_id != external_id_str:
+            raise ValueError(
+                f"Ownership validation failed: entity {entity_id} belongs to {entity.external_id}, not {external_id_str}"
+            )
+
+        # Update the entity
+        updated = await self._memory_manager.shortterm_repo.update_entity(
+            entity_id=entity_id,
+            name=name,
+            types=types,
+            description=description,
+            importance=importance,
+        )
+
+        if updated is None:
+            raise ValueError(f"Failed to update entity {entity_id}")
+
+        return {
+            "id": str(updated.id),
+            "name": updated.name,
+            "types": updated.types,
+            "description": updated.description,
+            "importance": updated.importance,
+            "external_id": updated.external_id,
+        }
+
+    async def update_shortterm_relationship(
+        self,
+        external_id: str | UUID | int,
+        relationship_id: int,
+        types: list[str] | None = None,
+        description: str | None = None,
+        importance: float | None = None,
+        strength: float | None = None,
+    ) -> dict:
+        """
+        Update a shortterm relationship's attributes.
+
+        Validates external_id ownership before modifying. Only updates fields
+        that are provided (None values are ignored).
+
+        Args:
+            external_id: Unique identifier for the agent (UUID, string, or int)
+            relationship_id: Neo4j elementId of the relationship
+            types: New types list (optional)
+            description: New description (optional)
+            importance: New importance score (optional)
+            strength: New strength score (optional)
+
+        Returns:
+            Dict with updated relationship fields
+
+        Raises:
+            RuntimeError: If not initialized
+            ValueError: If relationship not found or ownership validation fails
+
+        Example:
+            ```python
+            result = await agent_mem.update_shortterm_relationship(
+                external_id="agent-123",
+                relationship_id=99,
+                types=["WORKS_WITH"],
+                strength=0.8
+            )
+            print(f"Updated relationship {result['id']}")
+            ```
+        """
+        self._ensure_initialized()
+        external_id_str = str(external_id)
+
+        logger.info(f"Updating shortterm relationship {relationship_id} for {external_id_str}")
+
+        # Get relationship first to validate ownership
+        relationship = await self._memory_manager.shortterm_repo.get_relationship(relationship_id)
+        if relationship is None:
+            raise ValueError(f"Relationship {relationship_id} not found")
+
+        if relationship.external_id != external_id_str:
+            raise ValueError(
+                f"Ownership validation failed: relationship {relationship_id} belongs to {relationship.external_id}, not {external_id_str}"
+            )
+
+        # Build metadata with strength if provided
+        metadata = None
+        if strength is not None:
+            existing_metadata = relationship.metadata or {}
+            metadata = {**existing_metadata, "strength": strength}
+
+        # Update the relationship
+        updated = await self._memory_manager.shortterm_repo.update_relationship(
+            relationship_id=relationship_id,
+            types=types,
+            description=description,
+            importance=importance,
+            metadata=metadata,
+        )
+
+        if updated is None:
+            raise ValueError(f"Failed to update relationship {relationship_id}")
+
+        return {
+            "id": str(updated.id),
+            "types": updated.types,
+            "description": updated.description,
+            "importance": updated.importance,
+            "external_id": updated.external_id,
+            "strength": updated.metadata.get("strength") if updated.metadata else None,
+        }
 
     async def close(self) -> None:
         """
