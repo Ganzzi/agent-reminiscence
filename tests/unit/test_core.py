@@ -640,3 +640,272 @@ class TestAgentMemErrorHandling:
 
             # Should not raise error
             assert True
+
+
+class TestAgentMemShorttermOperations:
+    """Test shortterm memory CRUD operations for consolidation."""
+
+    @pytest.mark.asyncio
+    async def test_update_shortterm_chunk_happy_path(self, test_config):
+        """Test updating a shortterm chunk with valid external_id."""
+        from agent_reminiscence.database.models import ShorttermMemoryChunk
+
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock the chunk that exists
+            mock_chunk = MagicMock()
+            mock_chunk.id = 1
+            mock_chunk.shortterm_memory_id = 5
+            mock_chunk.external_id = "test-123"
+            mock_chunk.content = "Old content"
+            mock_chunk.metadata = {}
+
+            # Mock the updated chunk
+            updated_chunk = MagicMock()
+            updated_chunk.id = 1
+            updated_chunk.shortterm_memory_id = 5
+            updated_chunk.content = "New content"
+            updated_chunk.metadata = {"updated": True}
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_chunk_by_id = AsyncMock(return_value=mock_chunk)
+            mock_mm_instance.shortterm_repo.update_chunk = AsyncMock(return_value=updated_chunk)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            result = await agent_mem.update_shortterm_chunk(
+                external_id="test-123",
+                chunk_id=1,
+                new_content="New content",
+            )
+
+            assert result["id"] == 1
+            assert result["content"] == "New content"
+            mock_mm_instance.shortterm_repo.update_chunk.assert_called_once_with(
+                chunk_id=1, content="New content"
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_shortterm_chunk_ownership_validation(self, test_config):
+        """Test that update_shortterm_chunk rejects mismatched external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock chunk belonging to different external_id
+            mock_chunk = MagicMock()
+            mock_chunk.id = 1
+            mock_chunk.external_id = "other-agent"
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_chunk_by_id = AsyncMock(return_value=mock_chunk)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            with pytest.raises(ValueError, match="Ownership validation failed"):
+                await agent_mem.update_shortterm_chunk(
+                    external_id="test-123",
+                    chunk_id=1,
+                    new_content="New content",
+                )
+
+    @pytest.mark.asyncio
+    async def test_create_shortterm_chunk_happy_path(self, test_config):
+        """Test creating a shortterm chunk with valid external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock the memory
+            mock_memory = MagicMock()
+            mock_memory.id = 5
+            mock_memory.external_id = "test-123"
+
+            # Mock the created chunk
+            created_chunk = MagicMock()
+            created_chunk.id = 10
+            created_chunk.shortterm_memory_id = 5
+            created_chunk.content = "New chunk content"
+            created_chunk.section_id = "summary"
+            created_chunk.metadata = {"chunk_order": 1}
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_memory_by_id = AsyncMock(return_value=mock_memory)
+            mock_mm_instance.shortterm_repo.create_chunk = AsyncMock(return_value=created_chunk)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            result = await agent_mem.create_shortterm_chunk(
+                external_id="test-123",
+                memory_id=5,
+                content="New chunk content",
+                chunk_order=1,
+                section_id="summary",
+            )
+
+            assert result["id"] == 10
+            assert result["content"] == "New chunk content"
+            mock_mm_instance.shortterm_repo.create_chunk.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_shortterm_chunk_ownership_validation(self, test_config):
+        """Test that create_shortterm_chunk rejects mismatched external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock memory belonging to different external_id
+            mock_memory = MagicMock()
+            mock_memory.id = 5
+            mock_memory.external_id = "other-agent"
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_memory_by_id = AsyncMock(return_value=mock_memory)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            with pytest.raises(ValueError, match="Ownership validation failed"):
+                await agent_mem.create_shortterm_chunk(
+                    external_id="test-123",
+                    memory_id=5,
+                    content="New chunk content",
+                    chunk_order=1,
+                )
+
+    @pytest.mark.asyncio
+    async def test_update_shortterm_entity_happy_path(self, test_config):
+        """Test updating a shortterm entity with valid external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock the entity
+            mock_entity = MagicMock()
+            mock_entity.id = "5:实体"
+            mock_entity.external_id = "test-123"
+            mock_entity.name = "Old Name"
+            mock_entity.types = ["Person"]
+            mock_entity.description = "Old description"
+            mock_entity.importance = 0.5
+
+            # Mock the updated entity
+            updated_entity = MagicMock()
+            updated_entity.id = "5:实体"
+            updated_entity.external_id = "test-123"
+            updated_entity.name = "New Name"
+            updated_entity.types = ["Person", "Developer"]
+            updated_entity.description = "New description"
+            updated_entity.importance = 0.9
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_entity = AsyncMock(return_value=mock_entity)
+            mock_mm_instance.shortterm_repo.update_entity = AsyncMock(return_value=updated_entity)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            result = await agent_mem.update_shortterm_entity(
+                external_id="test-123",
+                entity_id=42,
+                name="New Name",
+                types=["Person", "Developer"],
+                description="New description",
+                importance=0.9,
+            )
+
+            assert result["name"] == "New Name"
+            assert result["types"] == ["Person", "Developer"]
+            assert result["importance"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_update_shortterm_entity_ownership_validation(self, test_config):
+        """Test that update_shortterm_entity rejects mismatched external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock entity belonging to different external_id
+            mock_entity = MagicMock()
+            mock_entity.id = 42
+            mock_entity.external_id = "other-agent"
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_entity = AsyncMock(return_value=mock_entity)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            with pytest.raises(ValueError, match="Ownership validation failed"):
+                await agent_mem.update_shortterm_entity(
+                    external_id="test-123",
+                    entity_id=42,
+                    types=["Person"],
+                )
+
+    @pytest.mark.asyncio
+    async def test_update_shortterm_relationship_happy_path(self, test_config):
+        """Test updating a shortterm relationship with valid external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock the relationship
+            mock_relationship = MagicMock()
+            mock_relationship.id = "5:relationship"
+            mock_relationship.external_id = "test-123"
+            mock_relationship.types = ["KNOWS"]
+            mock_relationship.description = "Old description"
+            mock_relationship.importance = 0.5
+            mock_relationship.metadata = {}
+
+            # Mock the updated relationship
+            updated_relationship = MagicMock()
+            updated_relationship.id = "5:relationship"
+            updated_relationship.external_id = "test-123"
+            updated_relationship.types = ["WORKS_WITH"]
+            updated_relationship.description = "New description"
+            updated_relationship.importance = 0.8
+            updated_relationship.metadata = {"strength": 0.8}
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_relationship = AsyncMock(return_value=mock_relationship)
+            mock_mm_instance.shortterm_repo.update_relationship = AsyncMock(return_value=updated_relationship)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            result = await agent_mem.update_shortterm_relationship(
+                external_id="test-123",
+                relationship_id=99,
+                types=["WORKS_WITH"],
+                description="New description",
+                importance=0.8,
+                strength=0.8,
+            )
+
+            assert result["types"] == ["WORKS_WITH"]
+            assert result["importance"] == 0.8
+            assert result["strength"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_update_shortterm_relationship_ownership_validation(self, test_config):
+        """Test that update_shortterm_relationship rejects mismatched external_id."""
+        with patch("agent_reminiscence.core.MemoryManager") as mock_mm:
+            # Mock relationship belonging to different external_id
+            mock_relationship = MagicMock()
+            mock_relationship.id = 99
+            mock_relationship.external_id = "other-agent"
+
+            mock_mm_instance = MagicMock()
+            mock_mm_instance.shortterm_repo.get_relationship = AsyncMock(return_value=mock_relationship)
+            mock_mm.return_value = mock_mm_instance
+
+            agent_mem = AgentMem(config=test_config)
+            agent_mem._initialized = True
+            agent_mem._memory_manager = mock_mm_instance
+
+            with pytest.raises(ValueError, match="Ownership validation failed"):
+                await agent_mem.update_shortterm_relationship(
+                    external_id="test-123",
+                    relationship_id=99,
+                    types=["WORKS_WITH"],
+                )
