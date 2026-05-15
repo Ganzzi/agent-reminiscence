@@ -86,12 +86,18 @@ def memory_manager_mock():
 @pytest.fixture
 async def agent_mem_initialized(memory_manager_mock, config_mock):
     """Create initialized AgentMem with mocked dependencies."""
-    with patch("agent_reminiscence.core.get_config", return_value=config_mock):
-        agent_mem = AgentMem(config=config_mock)
-        agent_mem._memory_manager = memory_manager_mock
-        agent_mem._initialized = True
-        yield agent_mem
-        agent_mem._initialized = False
+    from agent_reminiscence.config import settings
+
+    saved_config = settings._config
+    try:
+        with patch("agent_reminiscence.core.get_config", return_value=config_mock):
+            agent_mem = AgentMem(config=config_mock)
+            agent_mem._memory_manager = memory_manager_mock
+            agent_mem._initialized = True
+            yield agent_mem
+            agent_mem._initialized = False
+    finally:
+        settings._config = saved_config
 
 
 # ============================================================================
