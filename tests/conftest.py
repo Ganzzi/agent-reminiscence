@@ -63,7 +63,7 @@ def test_config() -> Config:
         postgres_port=int(os.getenv("POSTGRES_PORT", "5433")),  # Local QA PostgreSQL uses port 5433
         postgres_db=os.getenv("POSTGRES_DB", "agent_mem_test"),
         postgres_user=os.getenv("POSTGRES_USER", "backend"),
-        postgres_password=os.getenv("POSTGRES_PASSWORD", "backend"),
+        postgres_password=os.getenv("POSTGRES_PASSWORD", "agent-mem-test-password"),
         neo4j_uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
         neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
         neo4j_password=os.getenv("NEO4J_PASSWORD", "neo4jpassword"),

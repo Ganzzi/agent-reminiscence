@@ -2,6 +2,8 @@
 
 import os
 import pytest
+from pydantic import ValidationError
+
 from agent_reminiscence.config.settings import Config, get_config, set_config
 
 
@@ -134,6 +136,76 @@ class TestConfig:
 
         with pytest.raises((ValueError, TypeError)):
             Config(vector_dimension="not_a_number")
+
+    def test_fixture_defaults_meet_validation(self, monkeypatch, request):
+        """test_config fallbacks must construct a valid Config with no ambient overrides."""
+        for var in (
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DB",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "NEO4J_URI",
+            "NEO4J_USER",
+            "NEO4J_PASSWORD",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        config = request.getfixturevalue("test_config")
+
+        assert config.postgres_host == "localhost"
+        assert config.postgres_port == 5433
+        assert config.postgres_db == "agent_mem_test"
+        assert config.postgres_user == "backend"
+        assert config.postgres_password == "agent-mem-test-password"
+        assert config.neo4j_uri == "bolt://localhost:7687"
+        assert config.neo4j_user == "neo4j"
+        assert config.neo4j_password == "neo4jpassword"
+
+    def test_fixture_overrides_map_to_config(self, monkeypatch, request):
+        """test_config must map disclosed environment overrides to Config unchanged."""
+        monkeypatch.setenv("POSTGRES_HOST", "qa-postgres")
+        monkeypatch.setenv("POSTGRES_PORT", "5439")
+        monkeypatch.setenv("POSTGRES_DB", "agent_mem_override")
+        monkeypatch.setenv("POSTGRES_USER", "qa_user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "qa-override-password")
+        monkeypatch.setenv("NEO4J_URI", "bolt://qa-neo4j:7687")
+        monkeypatch.setenv("NEO4J_USER", "qa_neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "qa-neo4j-password")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://qa-ollama:11434")
+        monkeypatch.setenv("EMBEDDING_MODEL", "qa-embed-model")
+
+        config = request.getfixturevalue("test_config")
+
+        assert config.postgres_host == "qa-postgres"
+        assert config.postgres_port == 5439
+        assert isinstance(config.postgres_port, int)
+        assert config.postgres_db == "agent_mem_override"
+        assert config.postgres_user == "qa_user"
+        assert config.postgres_password == "qa-override-password"
+        assert config.neo4j_uri == "bolt://qa-neo4j:7687"
+        assert config.neo4j_user == "qa_neo4j"
+        assert config.neo4j_password == "qa-neo4j-password"
+        assert config.ollama_base_url == "http://qa-ollama:11434"
+        assert config.embedding_model == "qa-embed-model"
+
+    @pytest.mark.parametrize(
+        ("field", "value", "valid"),
+        [
+            ("postgres_password", "backend", False),
+            ("postgres_password", "testpass", True),
+            ("neo4j_password", "backend", False),
+            ("neo4j_password", "testpass", True),
+        ],
+    )
+    def test_password_min_length_boundary(self, field, value, valid):
+        """Non-empty passwords shorter than 8 characters must be rejected."""
+        if valid:
+            config = Config(**{field: value})
+            assert getattr(config, field) == value
+        else:
+            with pytest.raises(ValidationError):
+                Config(**{field: value})
 
 
 class TestConfigSingleton:
