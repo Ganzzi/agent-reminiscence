@@ -5,6 +5,8 @@ deep search, and consolidation paths.
 """
 
 import pytest
+from unittest.mock import AsyncMock
+
 from pydantic_ai.usage import RunUsage
 
 from agent_reminiscence.services.llm_model_provider import ModelProvider
@@ -118,32 +120,87 @@ class _DummyRunResult:
 
 
 @pytest.mark.asyncio
-async def test_extract_entities_and_relationships_routes_through_executor():
-    """extract_entities_and_relationships must route through injected executor."""
-    from agent_reminiscence.agents.er_extractor import extract_entities_and_relationships
+async def test_extract_entities_and_relationships_routes_through_executor(monkeypatch):
+    """extract_entities_and_relationships must route through injected executor.
 
-    calls = []
+    Only model construction is hermetic: a get_model spy returns a pydantic_ai
+    TestModel so no provider key is required. Real agent construction, extraction,
+    run_agent dispatch, typed output parsing and usage conversion all execute.
+    """
+    import agent_reminiscence.agents.er_extractor as er_extractor
+    from agent_reminiscence.agents.er_extractor import extract_entities_and_relationships
+    from agent_reminiscence.config import settings
+    from agent_reminiscence.config.settings import Config
+    from pydantic_ai.models.test import TestModel
+
+    config = Config(
+        postgres_host="localhost",
+        postgres_port=5433,
+        postgres_db="agent_mem_test",
+        postgres_user="backend",
+        postgres_password="agent-mem-test-password",
+        neo4j_uri="bolt://localhost:7687",
+        neo4j_user="neo4j",
+        neo4j_password="neo4jpassword",
+        er_extractor_agent_model="google:gemini-2.5-flash",
+    )
+    monkeypatch.setattr(settings, "_config", config)
+
+    # Force real Agent re-construction under the deterministic config.
+    monkeypatch.setattr(er_extractor, "_er_extractor_agent", None)
+
+    # Native Agent.run must never execute while an executor is injected.
+    native_run = AsyncMock(
+        side_effect=AssertionError("native Agent.run must not run in executor mode")
+    )
+    monkeypatch.setattr(er_extractor.Agent, "run", native_run)
+
+    get_model_calls = []
+
+    def spy_get_model(model_info):
+        get_model_calls.append(model_info)
+        return TestModel()
+
+    monkeypatch.setattr(module_provider, "get_model", spy_get_model)
+
+    executor_calls = []
 
     async def spy_executor(model_info, messages, model_settings, metadata):
-        calls.append({"model_info": model_info})
+        executor_calls.append(
+            {
+                "model_info": model_info,
+                "messages": messages,
+                "model_settings": model_settings,
+                "metadata": metadata,
+            }
+        )
         return {
             "text": '{"entities": [], "relationships": []}',
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }
 
-    # Inject executor into the module-level model_provider
-    module_provider.set_executor(spy_executor)
-    module_provider.set_backend_mode(True)
+    # Scoped monkeypatch restores prior provider state even on failure.
+    monkeypatch.setattr(module_provider, "_executor", spy_executor)
+    monkeypatch.setattr(module_provider, "_backend_mode", True)
 
-    try:
-        result, usage = await extract_entities_and_relationships("test content for extraction")
-        assert len(calls) >= 1
-        assert result is not None
-        assert hasattr(result, "entities")
-        assert hasattr(result, "relationships")
-    finally:
-        module_provider.set_executor(None)
-        module_provider.set_backend_mode(False)
+    result, usage = await extract_entities_and_relationships("test content for extraction")
+
+    assert get_model_calls == ["google:gemini-2.5-flash"]
+    assert len(executor_calls) == 1
+    call = executor_calls[0]
+    assert call["model_info"] == "google:gemini-2.5-flash"
+    assert call["messages"] == [{"role": "user", "content": "test content for extraction"}]
+    assert call["model_settings"] is None
+    assert call["metadata"] == {"operation": "extractor"}
+
+    native_run.assert_not_awaited()
+
+    assert isinstance(result, er_extractor.ExtractionResult)
+    assert result.entities == []
+    assert result.relationships == []
+    assert usage.input_tokens == 10
+    assert usage.output_tokens == 5
+    assert usage.requests == 1
 
 
 @pytest.mark.asyncio
