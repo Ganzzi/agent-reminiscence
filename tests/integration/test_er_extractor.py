@@ -20,6 +20,9 @@ from agent_reminiscence.agents.er_extractor import (
     EntityType,
     RelationshipType,
 )
+from agent_reminiscence.config import settings
+from agent_reminiscence.config.settings import Config
+import agent_reminiscence.services.llm_model_provider as llm_model_provider
 
 
 # =========================================================================
@@ -59,11 +62,34 @@ def sample_text_complex():
 # =========================================================================
 
 
-def test_agent_creation():
-    """Test that the agent can be created successfully."""
+def test_agent_creation(monkeypatch):
+    """Agent construction must not require provider credentials or .env."""
+    for var in ("GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+                "GROK_API_KEY", "ER_EXTRACTOR_AGENT_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+
+    config = Config(
+        postgres_host="localhost", postgres_port=5433, postgres_db="agent_mem_test",
+        postgres_user="backend", postgres_password="agent-mem-test-password",
+        neo4j_uri="bolt://localhost:7687", neo4j_user="neo4j",
+        neo4j_password="neo4jpassword",
+        er_extractor_agent_model="google:gemini-2.5-flash",
+    )
+    monkeypatch.setattr(settings, "_config", config)
+
+    get_model_calls = []
+    def spy_get_model(model_info):
+        get_model_calls.append(model_info)
+        return TestModel()
+    monkeypatch.setattr(llm_model_provider.model_provider, "get_model", spy_get_model)
+
     agent = get_er_extractor_agent()
+
     assert agent is not None
+    assert isinstance(agent, Agent)
     assert agent.output_type == ExtractionResult
+    assert get_model_calls == ["google:gemini-2.5-flash"]
+    assert isinstance(agent.model, TestModel)
 
 
 # =========================================================================
