@@ -1,0 +1,23 @@
+template:
+  id: "bmad.test.alpha.v1"
+  name: "Streamlit Test Template Alpha"
+  description: "Deterministic synthetic template for the Streamlit e2e module"
+  sections:
+    - id: "overview"
+      title: "Overview"
+      description: "Deterministic overview section for alpha template tests"
+      update_strategy: "replace"
+      consolidation_trigger: {"update_threshold": 5}
+    - id: "progress"
+      title: "Progress"
+      description: "Deterministic progress section for alpha template tests"
+      update_strategy: "append"
+      consolidation_trigger: {"update_threshold": 5}
+    - id: "notes"
+      title: "Notes"
+      description: "Deterministic notes section for alpha template tests"
+      update_strategy: "replace"
+      consolidation_trigger: {"update_threshold": 5}
+  metadata:
+    usage_type: "task"
+    priority: "medium"

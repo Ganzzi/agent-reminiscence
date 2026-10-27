@@ -1,0 +1,23 @@
+template:
+  id: "bmad.test.beta.v1"
+  name: "Streamlit Test Template Beta"
+  description: "Deterministic synthetic template for the Streamlit e2e module"
+  sections:
+    - id: "context"
+      title: "Context"
+      description: "Deterministic context section for beta template tests"
+      update_strategy: "replace"
+      consolidation_trigger: {"update_threshold": 5}
+    - id: "findings"
+      title: "Findings"
+      description: "Deterministic findings section for beta template tests"
+      update_strategy: "append"
+      consolidation_trigger: {"update_threshold": 5}
+    - id: "next_steps"
+      title: "Next Steps"
+      description: "Deterministic next-steps section for beta template tests"
+      update_strategy: "replace"
+      consolidation_trigger: {"update_threshold": 5}
+  metadata:
+    usage_type: "analysis"
+    priority: "low"
