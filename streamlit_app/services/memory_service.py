@@ -152,11 +152,10 @@ class MemoryService:
         try:
             agent_mem = await self._get_agent_mem()
 
-            memory = await agent_mem.update_active_memory_section(
+            memory = await agent_mem.update_active_memory_sections(
                 external_id=external_id,
                 memory_id=memory_id,
-                section_id=section_id,
-                new_content=new_content,
+                sections=[{"section_id": section_id, "new_content": new_content, "action": "replace"}],
             )
 
             logger.info(f"Updated memory {memory_id} section {section_id}")
