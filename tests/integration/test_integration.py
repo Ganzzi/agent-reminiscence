@@ -22,7 +22,7 @@ class TestEndToEndWorkflow:
     """Test complete memory workflow from creation to retrieval."""
 
     @pytest.mark.asyncio
-    async def test_full_memory_lifecycle(self, test_config):
+    async def test_full_memory_lifecycle(self, integration_config):
         """Test complete workflow: create → update → consolidate → retrieve."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -115,7 +115,7 @@ class TestEndToEndWorkflow:
             mock_mm.return_value = mock_mm_instance
 
             # Test workflow
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # 1. Create memory
                 mem = await agent_mem.create_active_memory(
                     external_id="test-integration",
@@ -169,7 +169,7 @@ class TestConsolidationWorkflow:
     """Test consolidation from active to shortterm memory."""
 
     @pytest.mark.asyncio
-    async def test_consolidation_with_entities(self, test_config):
+    async def test_consolidation_with_entities(self, integration_config):
         """Test consolidation extracts and stores entities."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -186,13 +186,13 @@ class TestConsolidationWorkflow:
 
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Create and update until consolidation
                 # Mocking handles the details
                 pass
 
     @pytest.mark.asyncio
-    async def test_consolidation_chunking(self, test_config):
+    async def test_consolidation_chunking(self, integration_config):
         """Test that consolidation properly chunks content."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -231,7 +231,7 @@ class TestConsolidationWorkflow:
 
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 mem = await agent_mem.create_active_memory(
                     external_id="test-chunking",
                     title="Chunking Test",
@@ -263,7 +263,7 @@ class TestPromotionWorkflow:
     """Test promotion from shortterm to longterm memory."""
 
     @pytest.mark.asyncio
-    async def test_promotion_with_importance_threshold(self, test_config):
+    async def test_promotion_with_importance_threshold(self, integration_config):
         """Test that only important memories are promoted."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -275,13 +275,13 @@ class TestPromotionWorkflow:
             mock_mm_instance._promote_to_longterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Promotion happens internally based on importance
                 # This test verifies the workflow exists
                 pass
 
     @pytest.mark.asyncio
-    async def test_promotion_entity_confidence_update(self, test_config):
+    async def test_promotion_entity_confidence_update(self, integration_config):
         """Test that entity confidence is updated during promotion."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -294,7 +294,7 @@ class TestPromotionWorkflow:
             mock_mm_instance._promote_to_longterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Test confidence update logic
                 pass
 
@@ -304,7 +304,7 @@ class TestCrossTierSearch:
     """Test search across all memory tiers."""
 
     @pytest.mark.asyncio
-    async def test_search_all_tiers(self, test_config):
+    async def test_search_all_tiers(self, integration_config):
         """Test search across active, shortterm, and longterm."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -329,7 +329,7 @@ class TestCrossTierSearch:
             mock_mm_instance.deep_search_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 result = await agent_mem.deep_search_memories(
                     query="machine learning",
                     external_id="test-123",
@@ -339,7 +339,7 @@ class TestCrossTierSearch:
                 assert "memories" in result.synthesis.lower()
 
     @pytest.mark.asyncio
-    async def test_hybrid_search_weighting(self, test_config):
+    async def test_hybrid_search_weighting(self, integration_config):
         """Test hybrid search with different weights."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -365,7 +365,7 @@ class TestCrossTierSearch:
             mock_mm_instance.deep_search_memories = AsyncMock(return_value=mock_result)
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 result = await agent_mem.deep_search_memories(
                     query="test",
                     external_id="test-123",
@@ -379,7 +379,7 @@ class TestEntityRelationshipPersistence:
     """Test entity and relationship persistence across workflows."""
 
     @pytest.mark.asyncio
-    async def test_entity_extraction_and_storage(self, test_config):
+    async def test_entity_extraction_and_storage(self, integration_config):
         """Test that entities are extracted and stored in Neo4j."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -392,7 +392,7 @@ class TestEntityRelationshipPersistence:
             mock_mm_instance._consolidate_to_shortterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Create memory with entity-rich content
                 await agent_mem.create_active_memory(
                     external_id="test-entities",
@@ -410,7 +410,7 @@ class TestEntityRelationshipPersistence:
                 # In real test, verify entities exist in Neo4j
 
     @pytest.mark.asyncio
-    async def test_relationship_creation(self, test_config):
+    async def test_relationship_creation(self, integration_config):
         """Test that relationships are created between entities."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -422,13 +422,13 @@ class TestEntityRelationshipPersistence:
             mock_mm_instance._consolidate_to_shortterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Test relationship creation
                 # Should connect related entities
                 pass
 
     @pytest.mark.asyncio
-    async def test_entity_merging_on_similarity(self, test_config):
+    async def test_entity_merging_on_similarity(self, integration_config):
         """Test that similar entities are auto-merged."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -443,7 +443,7 @@ class TestEntityRelationshipPersistence:
             mock_mm_instance._consolidate_to_shortterm = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Create memories with similar entities
                 # Should merge "Python" and "python programming language"
                 pass
@@ -454,20 +454,20 @@ class TestErrorRecovery:
     """Test error handling and recovery."""
 
     @pytest.mark.asyncio
-    async def test_database_connection_error(self, test_config):
+    async def test_database_connection_error(self, integration_config):
         """Test handling of database connection errors."""
         with patch("agent_reminiscence.services.memory_manager.PostgreSQLManager") as mock_pg:
             mock_pg_instance = MagicMock()
             mock_pg_instance.initialize = AsyncMock(side_effect=Exception("Connection failed"))
             mock_pg.return_value = mock_pg_instance
 
-            agent_mem = AgentMem(config=test_config)
+            agent_mem = AgentMem(config=integration_config)
 
             with pytest.raises(Exception):
                 await agent_mem.initialize()
 
     @pytest.mark.asyncio
-    async def test_partial_consolidation_failure(self, test_config):
+    async def test_partial_consolidation_failure(self, integration_config):
         """Test handling of partial consolidation failures."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -483,13 +483,13 @@ class TestErrorRecovery:
             mock_mm_instance.update_active_memory = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Update should succeed even if consolidation fails
                 # System should log error and continue
                 pass
 
     @pytest.mark.asyncio
-    async def test_embedding_generation_fallback(self, test_config):
+    async def test_embedding_generation_fallback(self, integration_config):
         """Test fallback when embedding generation fails."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -502,7 +502,7 @@ class TestErrorRecovery:
             mock_mm_instance.create_active_memory = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Should work with fallback embeddings
                 await agent_mem.create_active_memory(
                     external_id="test-fallback",
@@ -520,7 +520,7 @@ class TestPerformanceCharacteristics:
     """Test performance characteristics of the system."""
 
     @pytest.mark.asyncio
-    async def test_batch_memory_creation(self, test_config):
+    async def test_batch_memory_creation(self, integration_config):
         """Test creating multiple memories."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -532,7 +532,7 @@ class TestPerformanceCharacteristics:
             mock_mm_instance.create_active_memory = AsyncMock()
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 # Create 100 memories
                 for i in range(100):
                     await agent_mem.create_active_memory(
@@ -548,7 +548,7 @@ class TestPerformanceCharacteristics:
                 assert mock_mm_instance.create_active_memory.call_count == 100
 
     @pytest.mark.asyncio
-    async def test_search_with_large_result_set(self, test_config):
+    async def test_search_with_large_result_set(self, integration_config):
         """Test search returning many results."""
         with (
             patch("agent_reminiscence.database.PostgreSQLManager"),
@@ -574,7 +574,7 @@ class TestPerformanceCharacteristics:
             mock_mm_instance.deep_search_memories = AsyncMock(return_value=large_response)
             mock_mm.return_value = mock_mm_instance
 
-            async with AgentMem(config=test_config) as agent_mem:
+            async with AgentMem(config=integration_config) as agent_mem:
                 result = await agent_mem.deep_search_memories(
                     query="broad query",
                     external_id="test-123",

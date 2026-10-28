@@ -19,9 +19,13 @@ DATABASE / CREATE EXTENSION). Replay uses a dollar-quote-aware statement
 splitter mirroring `agent_reminiscence/database/init_databases.py` and
 aborts on the first server error, matching the entrypoint's
 `ON_ERROR_STOP=1` semantics.
+
+Since NGU-100 all DSNs derive from the session targeting gate
+(`targeting_state`): the throwaway name embeds the verified run_id and the
+teardown DROP is guarded by a run-prefix ownership check. Ambient-default
+DSNs are no longer read.
 """
 
-import os
 import uuid
 from pathlib import Path
 from typing import AsyncGenerator
@@ -29,6 +33,8 @@ from typing import AsyncGenerator
 import pytest
 from psqlpy import ConnectionPool
 from psqlpy.extra_types import PgVector
+
+from targeting import assert_owned_bootstrap_name, build_bootstrap_db_name
 
 SQL_DIR = Path(__file__).resolve().parents[2] / "agent_reminiscence" / "sql"
 
@@ -78,29 +84,6 @@ EXPECTED_FUNCTIONS = {"update_bm25_vector_chunk", "update_updated_at_column"}
 EXPECTED_EXTENSIONS = {"vector", "vchord", "pg_tokenizer", "vchord_bm25"}
 
 
-def _pg_setting(key: str, default: str) -> str:
-    return os.getenv(key, default)
-
-
-def _admin_dsn() -> str:
-    return (
-        f"postgresql://{_pg_setting('POSTGRES_USER', 'backend')}:"
-        f"{_pg_setting('POSTGRES_PASSWORD', 'agent-mem-test-password')}"
-        f"@{_pg_setting('POSTGRES_HOST', 'localhost')}:"
-        f"{_pg_setting('POSTGRES_PORT', '5433')}/"
-        f"{_pg_setting('POSTGRES_ADMIN_DB', 'postgres')}"
-    )
-
-
-def _db_dsn(db_name: str) -> str:
-    return (
-        f"postgresql://{_pg_setting('POSTGRES_USER', 'backend')}:"
-        f"{_pg_setting('POSTGRES_PASSWORD', 'agent-mem-test-password')}"
-        f"@{_pg_setting('POSTGRES_HOST', 'localhost')}:"
-        f"{_pg_setting('POSTGRES_PORT', '5433')}/{db_name}"
-    )
-
-
 def _split_statements(sql_text: str) -> list[str]:
     """Dollar-quote-aware splitter mirroring init_databases.py."""
     statements: list[str] = []
@@ -136,17 +119,21 @@ def _entrypoint_executable_entries() -> list[str]:
 
 
 @pytest.fixture(scope="module")
-async def bootstrapped_db() -> AsyncGenerator[dict, None]:
+async def bootstrapped_db(targeting_state) -> AsyncGenerator[dict, None]:
     """Create a throwaway database, replay the whole init tree fail-fast."""
-    db_name = f"ngu98_bootstrap_check_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    # The session targeting gate has already verified this run's in-store
+    # ownership markers before any module fixture (or mutation) runs.
+    db_name = build_bootstrap_db_name(targeting_state.run_id)
 
-    admin_pool = ConnectionPool(dsn=_admin_dsn(), max_db_pool_size=2)
+    admin_pool = ConnectionPool(dsn=targeting_state.admin_dsn, max_db_pool_size=2)
     conn = await admin_pool.connection()
-    await conn.execute(f"CREATE DATABASE {db_name}")
+    # run_id is regex-validated ([a-z0-9-]) by the gate, so the quoted
+    # identifier is injection-safe (hyphens require quoting).
+    await conn.execute(f'CREATE DATABASE "{db_name}"')
     admin_pool.close()
 
     replay: list[tuple[str, int]] = []
-    pool = ConnectionPool(dsn=_db_dsn(db_name), max_db_pool_size=2)
+    pool = ConnectionPool(dsn=targeting_state.dsn_for(db_name), max_db_pool_size=2)
     try:
         conn = await pool.connection()
         for file_name in _entrypoint_executable_entries():
@@ -167,9 +154,10 @@ async def bootstrapped_db() -> AsyncGenerator[dict, None]:
 
     yield {"db_name": db_name, "replay": replay}
 
-    admin_pool = ConnectionPool(dsn=_admin_dsn(), max_db_pool_size=2)
+    assert_owned_bootstrap_name(db_name, targeting_state.run_id)
+    admin_pool = ConnectionPool(dsn=targeting_state.admin_dsn, max_db_pool_size=2)
     conn = await admin_pool.connection()
-    await conn.execute(f"DROP DATABASE IF EXISTS {db_name} WITH (FORCE)")
+    await conn.execute(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)')
     admin_pool.close()
 
 
@@ -187,9 +175,11 @@ async def test_fail_fast_replay_bootstraps_database(
     assert all(count > 0 for count in replay.values())
 
 
-async def test_catalog_contract(bootstrapped_db: dict) -> None:
+async def test_catalog_contract(bootstrapped_db: dict, targeting_state) -> None:
     """The replayed database must match the default-bootstrap catalog."""
-    pool = ConnectionPool(dsn=_db_dsn(bootstrapped_db["db_name"]), max_db_pool_size=2)
+    pool = ConnectionPool(
+        dsn=targeting_state.dsn_for(bootstrapped_db["db_name"]), max_db_pool_size=2
+    )
     conn = await pool.connection()
 
     result = await conn.execute(
@@ -250,13 +240,15 @@ async def test_catalog_contract(bootstrapped_db: dict) -> None:
     pool.close()
 
 
-async def test_hybrid_search_smoke(bootstrapped_db: dict) -> None:
+async def test_hybrid_search_smoke(bootstrapped_db: dict, targeting_state) -> None:
     """Insert/search smoke through the repository's own query forms."""
     external_id = f"ngu98-bootstrap-smoke-{uuid.uuid4().hex[:8]}"
     content = "The bootstrap regression smoke test validates hybrid search."
     embedding = [0.1] * 768
 
-    pool = ConnectionPool(dsn=_db_dsn(bootstrapped_db["db_name"]), max_db_pool_size=2)
+    pool = ConnectionPool(
+        dsn=targeting_state.dsn_for(bootstrapped_db["db_name"]), max_db_pool_size=2
+    )
     conn = await pool.connection()
 
     result = await conn.execute(

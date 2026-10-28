@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import pytest
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 from agent_reminiscence.config.settings import Config
@@ -112,20 +111,23 @@ def mock_config() -> Config:
 
 
 @pytest.fixture
-async def postgres_manager(test_config: Config) -> AsyncGenerator[PostgreSQLManager, None]:
-    """Create a PostgreSQLManager with test configuration."""
-    manager = PostgreSQLManager(test_config)
-    await manager.initialize()
-    yield manager
-    await manager.close()
+def postgres_manager() -> None:
+    raise RuntimeError(
+        "postgres_manager requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
-async def neo4j_manager(test_config: Config) -> AsyncGenerator[Neo4jManager, None]:
-    """Create a Neo4jManager with test configuration."""
-    manager = Neo4jManager(test_config)
-    yield manager
-    await manager.close()
+def neo4j_manager() -> None:
+    raise RuntimeError(
+        "neo4j_manager requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
@@ -153,29 +155,33 @@ def mock_neo4j_manager() -> MagicMock:
 
 
 @pytest.fixture
-async def active_memory_repository(
-    postgres_manager: PostgreSQLManager,
-) -> ActiveMemoryRepository:
-    """Create an ActiveMemoryRepository with real database."""
-    return ActiveMemoryRepository(postgres_manager)
+def active_memory_repository() -> None:
+    raise RuntimeError(
+        "active_memory_repository requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
-async def shortterm_memory_repository(
-    postgres_manager: PostgreSQLManager,
-    neo4j_manager: Neo4jManager,
-) -> ShorttermMemoryRepository:
-    """Create a ShorttermMemoryRepository with real databases."""
-    return ShorttermMemoryRepository(postgres_manager, neo4j_manager)
+def shortterm_memory_repository() -> None:
+    raise RuntimeError(
+        "shortterm_memory_repository requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
-async def longterm_memory_repository(
-    postgres_manager: PostgreSQLManager,
-    neo4j_manager: Neo4jManager,
-) -> LongtermMemoryRepository:
-    """Create a LongtermMemoryRepository with real databases."""
-    return LongtermMemoryRepository(postgres_manager, neo4j_manager)
+def longterm_memory_repository() -> None:
+    raise RuntimeError(
+        "longterm_memory_repository requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
@@ -220,9 +226,13 @@ def mock_longterm_memory_repository() -> MagicMock:
 
 
 @pytest.fixture
-async def embedding_service(test_config: Config) -> EmbeddingService:
-    """Create an EmbeddingService with test configuration."""
-    return EmbeddingService(test_config)
+def embedding_service() -> None:
+    raise RuntimeError(
+        "embedding_service requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
@@ -236,13 +246,13 @@ def mock_embedding_service() -> MagicMock:
 
 
 @pytest.fixture
-async def memory_manager(
-    postgres_manager: PostgreSQLManager,
-    neo4j_manager: Neo4jManager,
-    test_config: Config,
-) -> MemoryManager:
-    """Create a MemoryManager with real dependencies."""
-    return MemoryManager(postgres_manager, neo4j_manager, test_config)
+def memory_manager() -> None:
+    raise RuntimeError(
+        "memory_manager requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "are refused."
+    )
 
 
 @pytest.fixture
@@ -350,46 +360,13 @@ def sample_relationship_data() -> dict:
 
 
 @pytest.fixture
-async def cleanup_test_data(
-    postgres_manager: PostgreSQLManager,
-    neo4j_manager: Neo4jManager,
-) -> AsyncGenerator[None, None]:
-    """Clean up test data before and after tests."""
-    # Cleanup before test
-    await _cleanup_databases(postgres_manager, neo4j_manager)
-
-    yield
-
-    # Cleanup after test
-    await _cleanup_databases(postgres_manager, neo4j_manager)
-
-
-async def _cleanup_databases(
-    postgres_manager: PostgreSQLManager,
-    neo4j_manager: Neo4jManager,
-) -> None:
-    """Helper to clean up all test data."""
-    # Clean PostgreSQL
-    try:
-        await postgres_manager.execute_query(
-            "DELETE FROM active_memory WHERE external_id LIKE 'test-%'"
-        )
-        await postgres_manager.execute_query(
-            "DELETE FROM shortterm_memory WHERE external_id LIKE 'test-%'"
-        )
-        await postgres_manager.execute_query(
-            "DELETE FROM longterm_memory_chunks WHERE external_id LIKE 'test-%'"
-        )
-    except Exception as e:
-        print(f"Error cleaning PostgreSQL: {e}")
-
-    # Clean Neo4j
-    try:
-        await neo4j_manager.execute_write(
-            "MATCH (n) WHERE n.memory_id STARTS WITH 'test-' DETACH DELETE n"
-        )
-    except Exception as e:
-        print(f"Error cleaning Neo4j: {e}")
+def cleanup_test_data() -> None:
+    raise RuntimeError(
+        "cleanup_test_data requires explicit run-owned integration targeting "
+        "(NGU-100): request 'integration_config' under tests/integration/ with "
+        "AGENT_MEM_INTEGRATION_TARGETING set. Ambient-default real resources "
+        "and broad ambient deletes are refused."
+    )
 
 
 # ============================================================================
